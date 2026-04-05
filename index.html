@@ -583,12 +583,37 @@ let editMode    = false;
 // ══════════════════════════════════════════════
 function saveContestList() {
   try { localStorage.setItem('contest_list', JSON.stringify(contests)); } catch(e){}
+  fbSaveContestList();
 }
 function loadContestList() {
   try {
     const c = localStorage.getItem('contest_list');
     if (c) contests = JSON.parse(c);
   } catch(e){}
+}
+
+// Firebase 대회 목록 저장
+function fbSaveContestList() {
+  if (!db) return;
+  db.ref('contest_list').set(contests).catch(()=>{});
+}
+
+// Firebase 대회 목록 실시간 수신
+function fbListenContestList() {
+  if (!db) return;
+  db.ref('contest_list').on('value', snap => {
+    const data = snap.val();
+    if (!data) return;
+    // 서버 목록과 로컬 목록 합치기 (중복 제거)
+    const serverContests = Array.isArray(data) ? data : Object.values(data);
+    const localIds = new Set(contests.map(c => c.id));
+    serverContests.forEach(c => { if (c && c.id && !localIds.has(c.id)) contests.push(c); });
+    // 서버에서 삭제된 것은 로컬에서도 제거
+    const serverIds = new Set(serverContests.filter(c=>c&&c.id).map(c => c.id));
+    contests = contests.filter(c => serverIds.has(c.id));
+    try { localStorage.setItem('contest_list', JSON.stringify(contests)); } catch(e){}
+    renderContestScreen();
+  });
 }
 
 // 특정 대회 데이터를 로컬에 저장
@@ -671,6 +696,10 @@ function deleteContest(id) {
   contests = contests.filter(x => x.id !== id);
   saveContestList();
   try { localStorage.removeItem('contest_data_' + id); } catch(e){}
+  // Firebase에서도 대회 데이터 삭제
+  if (db) {
+    db.ref('contests/' + id).remove().catch(()=>{});
+  }
   renderContestScreen();
   showToast('삭제 완료');
 }
@@ -1590,6 +1619,8 @@ function renderOverall() {
     el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🥇</div><p>종목을 추가하고 기록을 입력하면 전체 순위가 표시됩니다</p></div>`;
     return;
   }
+
+  // 소속별로 등수별 카운트 집계 { team: { rankCounts: {1:2, 2:1, 4:1}, total:4 } }
   const teamAwards = {};
   events.forEach(ev => {
     const picks = ev.overallPicks || {};
@@ -1597,37 +1628,59 @@ function renderOverall() {
       if (!picks[r.pid]) return;
       const team = r.participant.team;
       if (!team) return;
-      if (!teamAwards[team]) teamAwards[team] = { gold:0, silver:0, bronze:0, total:0 };
-      if (r.rank===1) { teamAwards[team].gold++; teamAwards[team].total++; }
-      else if (r.rank===2) { teamAwards[team].silver++; teamAwards[team].total++; }
-      else if (r.rank===3) { teamAwards[team].bronze++; teamAwards[team].total++; }
-      else { teamAwards[team].total++; }
+      if (!teamAwards[team]) teamAwards[team] = { rankCounts: {}, total: 0 };
+      teamAwards[team].rankCounts[r.rank] = (teamAwards[team].rankCounts[r.rank] || 0) + 1;
+      teamAwards[team].total++;
     });
   });
-  const teamList = Object.entries(teamAwards)
-    .map(([team,a]) => ({ team, ...a }))
-    .sort((a,b) => b.gold-a.gold || b.silver-a.silver || b.bronze-a.bronze || b.total-a.total);
+
+  // 소속별로 상위 3개 등수 추출해서 정렬 기준 만들기
+  const teamList = Object.entries(teamAwards).map(([team, a]) => {
+    const sortedRanks = Object.keys(a.rankCounts).map(Number).sort((x,y) => x-y);
+    const top3ranks = sortedRanks.slice(0, 3); // 상위 3개 등수
+    return {
+      team,
+      rankCounts: a.rankCounts,
+      top3ranks,
+      total: a.total,
+      r1: a.rankCounts[top3ranks[0]] || 0,
+      r2: a.rankCounts[top3ranks[1]] || 0,
+      r3: a.rankCounts[top3ranks[2]] || 0,
+    };
+  }).sort((a,b) => b.total-a.total || b.r1-a.r1 || b.r2-a.r2 || b.r3-a.r3);
+
+  // 순위 부여 (합계 같으면 동점)
   let ovRank = 1;
   for (let i=0; i<teamList.length; i++) {
-    if (i>0 && (teamList[i].gold!==teamList[i-1].gold || teamList[i].silver!==teamList[i-1].silver || teamList[i].bronze!==teamList[i-1].bronze)) ovRank = i+1;
+    if (i>0 && teamList[i].total!==teamList[i-1].total) ovRank = i+1;
     teamList[i].rank = ovRank;
   }
+
+  // 전체에서 사용된 상위 3개 등수 아이콘
+  const rankEmojis = ['🥇','🥈','🥉'];
+
   const maxTotal = Math.max(...teamList.map(t=>t.total), 1);
 
   let html = `<div class="card section-gap">
     <div class="card-header"><span class="card-title">🏆 소속별 종합 순위</span></div>
     <div class="card-body">
-      <div class="alert alert-info" style="margin-bottom:16px;">순위 결과에서 체크·완료한 사람만 반영 · 순위당 1점</div>`;
+      <div class="alert alert-info" style="margin-bottom:16px;">순위 결과에서 체크·완료한 사람만 반영 · 수상 수 합계 기준</div>`;
   if (!teamList.length) {
     html += `<div style="color:var(--text3);text-align:center;padding:20px;">종목 페이지에서 순위를 체크하고 "완료" 버튼을 눌러주세요</div>`;
   } else {
     teamList.forEach(t => {
       const pct = Math.round((t.total/maxTotal)*100);
+      // 상위 3개 등수를 이모지+숫자로 표시
+      const rankBadges = t.top3ranks.map((rank, idx) => {
+        const emoji = rankEmojis[idx] || '🏅';
+        const cnt = t.rankCounts[rank] || 0;
+        return `${emoji}${cnt}`;
+      }).join(' &nbsp;');
       html += `<div class="overall-team-item">${getRankBadge(t.rank)}
         <div class="overall-bar-wrap">
           <div class="overall-bar-label">
             <span><span class="team-tag" style="${getTeamColor(t.team)}">${t.team}</span>
-              <span style="margin-left:8px;font-size:12px;color:var(--text3);">🥇${t.gold} &nbsp;🥈${t.silver} &nbsp;🥉${t.bronze}</span>
+              <span style="margin-left:8px;font-size:12px;color:var(--text3);">${rankBadges}</span>
             </span>
             <span style="font-weight:600;">${t.total}점</span>
           </div>
@@ -1744,24 +1797,29 @@ function exportOverallExcel() {
     computeRankings(ev.id).forEach(r => {
       if (!picks[r.pid]) return;
       const team = r.participant.team; if (!team) return;
-      if (!teamAwards[team]) teamAwards[team] = {gold:0,silver:0,bronze:0,total:0};
-      if (r.rank===1) { teamAwards[team].gold++; teamAwards[team].total++; }
-      else if (r.rank===2) { teamAwards[team].silver++; teamAwards[team].total++; }
-      else if (r.rank===3) { teamAwards[team].bronze++; teamAwards[team].total++; }
-      else teamAwards[team].total++;
+      if (!teamAwards[team]) teamAwards[team] = { rankCounts:{}, total:0 };
+      teamAwards[team].rankCounts[r.rank] = (teamAwards[team].rankCounts[r.rank]||0)+1;
+      teamAwards[team].total++;
     });
   });
-  const teamList = Object.entries(teamAwards).map(([team,a])=>({team,...a}))
-    .sort((a,b)=>b.gold-a.gold||b.silver-a.silver||b.bronze-a.bronze||b.total-a.total);
+  const teamList = Object.entries(teamAwards).map(([team,a])=>{
+    const sortedRanks = Object.keys(a.rankCounts).map(Number).sort((x,y)=>x-y);
+    return { team, rankCounts:a.rankCounts, top3ranks:sortedRanks.slice(0,3), total:a.total };
+  }).sort((a,b)=>b.total-a.total);
   let ovRank=1;
   for (let i=0;i<teamList.length;i++) {
-    if (i>0&&(teamList[i].gold!==teamList[i-1].gold||teamList[i].silver!==teamList[i-1].silver||teamList[i].bronze!==teamList[i-1].bronze)) ovRank=i+1;
+    if (i>0&&teamList[i].total!==teamList[i-1].total) ovRank=i+1;
     teamList[i].rank=ovRank;
   }
-  const td=[['순위','소속','🥇 금','🥈 은','🥉 동','합계(점)']];
-  teamList.forEach(t=>td.push([t.rank+'위',t.team,t.gold,t.silver,t.bronze,t.total]));
+  const td=[['순위','소속','1위 수상','2위 수상','3위 수상','합계']];
+  teamList.forEach(t=>{
+    const r1=t.rankCounts[t.top3ranks[0]]||0;
+    const r2=t.rankCounts[t.top3ranks[1]]||0;
+    const r3=t.rankCounts[t.top3ranks[2]]||0;
+    td.push([t.rank+'위',t.team,r1,r2,r3,t.total]);
+  });
   const wsT=XLSX.utils.aoa_to_sheet(td);
-  wsT['!cols']=[{wch:6},{wch:16},{wch:8},{wch:8},{wch:8},{wch:10}];
+  wsT['!cols']=[{wch:6},{wch:16},{wch:10},{wch:10},{wch:10},{wch:8}];
   XLSX.utils.book_append_sheet(wb,wsT,'소속별 종합 순위');
   events.forEach(ev => {
     const picks=ev.overallPicks||{};
@@ -2314,6 +2372,8 @@ async function initFirebase(cfg) {
     await db.ref('.info/serverTimeOffset').once('value');
     setSyncStatus('ok','실시간 동기화');
     db.ref('.info/connected').on('value', snap => setSyncStatus(snap.val()?'ok':'error', snap.val()?'실시간 동기화':'연결 끊김'));
+    // 대회 목록 실시간 동기화 시작
+    fbListenContestList();
     if (currentContestId) fbListenContest(currentContestId);
     showToast('Firebase 연결 완료 ✅');
   } catch(e) {
@@ -2392,6 +2452,7 @@ loadContestList();
 renderContestScreen();
 const _fbCfg = loadFbConfig();
 if (_fbCfg) initFirebase(_fbCfg);
+// Firebase 연결되면 fbListenContestList()가 자동으로 대회 목록 동기화함
 </script>
 </body>
 </html>
