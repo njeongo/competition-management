@@ -1,0 +1,2397 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>줄넘기 대회 관리 시스템</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+:root {
+  --bg:#f7f6f2; --surface:#fff; --surface2:#f0efe9; --border:#e2e0d8;
+  --text:#1a1917; --text2:#6b6960; --text3:#9b9a94;
+  --accent:#2563eb; --accent-light:#eff4ff;
+  --gold:#c9910a; --gold-bg:#fef9ec;
+  --silver:#6b7280; --silver-bg:#f3f4f6;
+  --bronze:#b45309; --bronze-bg:#fef3c7;
+  --danger:#dc2626; --danger-bg:#fef2f2;
+  --success:#16a34a; --success-bg:#f0fdf4;
+  --radius:10px; --radius-lg:16px;
+  --shadow:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.04);
+  --shadow-md:0 4px 12px rgba(0,0,0,.1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px;line-height:1.6}
+
+/* ── 대회 선택 화면 ── */
+#contest-screen {
+  min-height:100vh; display:flex; align-items:center; justify-content:center;
+  background:var(--bg); padding:20px;
+}
+.contest-wrap { width:100%; max-width:560px; }
+.contest-wrap h1 { font-size:26px; font-weight:700; margin-bottom:4px; }
+.contest-wrap p  { color:var(--text3); font-size:13px; margin-bottom:28px; }
+.contest-list { display:grid; gap:10px; margin-bottom:20px; }
+.contest-item {
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg);
+  padding:16px 20px; display:flex; align-items:center; justify-content:space-between;
+  cursor:pointer; transition:border-color .15s, box-shadow .15s;
+}
+.contest-item:hover { border-color:var(--accent); box-shadow:var(--shadow-md); }
+.contest-item-info h3 { font-size:15px; font-weight:600; }
+.contest-item-info span { font-size:12px; color:var(--text3); }
+.contest-item-actions { display:flex; gap:6px; }
+
+/* ── Layout ── */
+.app{display:flex;min-height:100vh}
+.sidebar{width:230px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:100}
+.sidebar-logo{padding:16px 18px 12px;border-bottom:1px solid var(--border)}
+.sidebar-logo h1{font-size:14px;font-weight:700;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sidebar-logo .contest-date{font-size:11px;color:var(--text3)}
+.sync-label{font-size:11px;color:var(--text3);display:flex;align-items:center;margin-top:5px}
+.sync-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px;background:var(--text3);transition:background .3s}
+.sync-dot.ok{background:var(--success)}.sync-dot.syncing{background:#f59e0b;animation:pulse .8s infinite}.sync-dot.error{background:var(--danger)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+.sidebar-nav{flex:1;padding:10px 8px;overflow-y:auto}
+.nav-section-label{font-size:10px;font-weight:500;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;padding:10px 10px 4px}
+.nav-btn{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:none;background:none;border-radius:8px;font-family:inherit;font-size:13px;color:var(--text2);cursor:pointer;text-align:left;transition:background .15s,color .15s}
+.nav-btn:hover{background:var(--surface2);color:var(--text)}
+.nav-btn.active{background:var(--accent-light);color:var(--accent);font-weight:500}
+.nav-btn .icon{font-size:15px;width:18px;text-align:center}
+
+/* 종목 그룹 */
+.nav-group { margin-bottom:2px; }
+.nav-group-header {
+  display:flex; align-items:center; width:100%;
+  border:none; background:none; border-radius:8px;
+  font-family:inherit; cursor:pointer; transition:background .15s; padding:0;
+}
+.nav-group-header:hover { background:var(--surface2); }
+.nav-group-header.active { background:var(--accent-light); }
+.nav-group-btn {
+  flex:1; padding:7px 8px 7px 10px; text-align:left;
+  font-size:12px; font-weight:500; color:var(--text2);
+  background:none; border:none; font-family:inherit; cursor:pointer;
+}
+.nav-group-header.active .nav-group-btn { color:var(--accent); }
+.nav-group-toggle { padding:4px 8px; color:var(--text3); font-size:11px; background:none; border:none; cursor:pointer; }
+.nav-group-children { padding-left:10px; }
+.nav-group-children .grade-btn {
+  display:block; width:100%; padding:5px 10px; border:none; background:none;
+  border-radius:6px; font-family:inherit; font-size:11px; color:var(--text3);
+  cursor:pointer; text-align:left; transition:background .15s, color .15s;
+}
+.nav-group-children .grade-btn:hover { background:var(--surface2); color:var(--text2); }
+.nav-group-children .grade-btn.active { background:var(--accent-light); color:var(--accent); font-weight:500; }
+
+/* 편집 모드 */
+.nav-edit-row {
+  display:none; align-items:center; gap:4px;
+  padding:3px 6px 3px 10px;
+}
+.sidebar.edit-mode .nav-edit-row { display:flex; }
+.sidebar.edit-mode .nav-group-toggle { display:none; }
+.nav-edit-del { padding:2px 6px; color:var(--danger); font-size:12px; background:none; border:1px solid #fecaca; border-radius:4px; cursor:pointer; }
+.nav-edit-up, .nav-edit-dn { padding:2px 5px; font-size:12px; background:var(--surface2); border:1px solid var(--border); border-radius:4px; cursor:pointer; }
+
+.sidebar-footer{padding:10px 8px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
+.btn-add-event{display:flex;align-items:center;gap:6px;width:100%;padding:8px 10px;border:1.5px dashed var(--border);background:none;border-radius:8px;font-family:inherit;font-size:12px;color:var(--text3);cursor:pointer;transition:all .15s}
+.btn-add-event:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-light)}
+.btn-edit-mode{display:flex;align-items:center;gap:6px;width:100%;padding:7px 10px;border:1px solid var(--border);background:var(--surface2);border-radius:8px;font-family:inherit;font-size:12px;color:var(--text2);cursor:pointer;transition:all .15s}
+.btn-edit-mode:hover{background:var(--border)}
+.sidebar.edit-mode .btn-edit-mode{background:var(--accent-light);color:var(--accent);border-color:var(--accent)}
+
+/* Main */
+.main{margin-left:230px;flex:1;display:flex;flex-direction:column;min-height:100vh}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 28px;height:56px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
+.topbar-title{font-size:16px;font-weight:500}
+.topbar-actions{display:flex;gap:8px}
+.content{padding:28px;max-width:1000px}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:var(--radius);font-family:inherit;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;border:none;text-decoration:none}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:#1d4ed8}
+.btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border)}.btn-secondary:hover{background:var(--border)}
+.btn-danger{background:var(--danger-bg);color:var(--danger);border:1px solid #fecaca}.btn-danger:hover{background:#fecaca}
+.btn-sm{padding:5px 10px;font-size:12px}.btn-xs{padding:3px 8px;font-size:11px;border-radius:6px}
+
+/* Cards */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow)}
+.card-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.card-title{font-size:14px;font-weight:600}
+.card-body{padding:20px}
+
+/* Tables */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:10px 12px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:11px;font-weight:600;color:var(--text2);letter-spacing:.03em;text-transform:uppercase;white-space:nowrap}
+th:first-child{border-radius:8px 0 0 0}th:last-child{border-radius:0 8px 0 0}
+td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}tr:hover td{background:var(--surface2)}
+
+/* Forms */
+.form-group{margin-bottom:16px}
+.form-label{display:block;font-size:12px;font-weight:500;color:var(--text2);margin-bottom:6px}
+.form-control{width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-family:inherit;font-size:13px;color:var(--text);background:var(--surface);transition:border-color .15s;outline:none}
+.form-control:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+select.form-control{cursor:pointer}
+.form-row{display:grid;gap:12px}.form-row-2{grid-template-columns:1fr 1fr}.form-row-3{grid-template-columns:1fr 1fr 1fr}
+
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px;opacity:0;pointer-events:none;transition:opacity .2s}
+.modal-overlay.open{opacity:1;pointer-events:all}
+.modal{background:var(--surface);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);width:100%;max-width:500px;transform:translateY(8px);transition:transform .2s}
+.modal-overlay.open .modal{transform:translateY(0)}
+.modal-header{padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-title{font-size:15px;font-weight:600}
+.modal-close{background:none;border:none;font-size:18px;color:var(--text3);cursor:pointer;padding:2px 6px;border-radius:6px}
+.modal-close:hover{background:var(--surface2);color:var(--text)}
+.modal-body{padding:20px}
+.modal-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+
+/* Rank badges */
+.rank-circle{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;font-family:'DM Mono',monospace}
+.rank-1{background:var(--gold-bg);color:var(--gold)}.rank-2{background:var(--silver-bg);color:var(--silver)}.rank-3{background:var(--bronze-bg);color:var(--bronze)}.rank-n{background:var(--surface2);color:var(--text3)}
+
+/* Score input */
+.score-input{width:70px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-family:'DM Mono',monospace;font-size:13px;text-align:right;outline:none;background:var(--surface);color:var(--text)}
+.score-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(37,99,235,.1)}
+
+/* Tabs */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px}
+.tab-btn{padding:10px 16px;border:none;background:none;font-family:inherit;font-size:13px;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s}
+.tab-btn:hover{color:var(--text)}.tab-btn.active{color:var(--accent);font-weight:500;border-bottom-color:var(--accent)}
+
+/* Pages */
+.page{display:none}.page.active{display:block}
+
+/* Upload zone */
+.upload-zone{border:2px dashed var(--border);border-radius:var(--radius-lg);padding:32px;text-align:center;cursor:pointer;transition:all .2s}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--accent);background:var(--accent-light)}
+.upload-zone-icon{font-size:32px;margin-bottom:10px}
+.upload-zone p{color:var(--text2);font-size:13px}
+.upload-zone strong{color:var(--accent)}
+
+/* Stats */
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;margin-bottom:24px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+.stat-label{font-size:11px;color:var(--text3);font-weight:500;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.stat-value{font-size:26px;font-weight:700;color:var(--text);font-family:'DM Mono',monospace}
+.stat-sub{font-size:11px;color:var(--text3);margin-top:2px}
+
+/* Team tag */
+.team-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500;background:var(--surface2);color:var(--text2)}
+
+/* Alert */
+.alert{padding:12px 16px;border-radius:var(--radius);font-size:13px;margin-bottom:16px}
+.alert-info{background:var(--accent-light);color:#1e40af;border:1px solid #bfdbfe}
+.alert-success{background:var(--success-bg);color:#15803d;border:1px solid #bbf7d0}
+
+/* Empty state */
+.empty-state{text-align:center;padding:48px 20px;color:var(--text3)}
+.empty-state-icon{font-size:40px;margin-bottom:12px}
+.empty-state p{font-size:14px}
+
+/* Ranking */
+.ranking-grid{display:grid;gap:10px}
+.ranking-item{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;display:flex;align-items:center;gap:12px;position:relative;cursor:default}
+.ranking-item.rank-1-item{border-color:#fde68a;background:var(--gold-bg)}
+.ranking-item.rank-2-item{border-color:var(--border);background:var(--silver-bg)}
+.ranking-item.rank-3-item{border-color:#fde68a;background:var(--bronze-bg)}
+.ranking-item.checked{outline:2px solid var(--accent);background:var(--accent-light)!important}
+.ranking-check{width:18px;height:18px;accent-color:var(--accent);cursor:pointer;flex-shrink:0}
+.ranking-info{flex:1}
+.ranking-name{font-weight:500;font-size:14px}
+.ranking-meta{font-size:12px;color:var(--text3)}
+.ranking-score{font-family:'DM Mono',monospace;font-size:18px;font-weight:600;color:var(--text2)}
+
+/* Pick action bar */
+.pick-action-bar{display:none;margin-top:14px;gap:8px;align-items:center;flex-wrap:wrap}
+.pick-action-bar.visible{display:flex}
+
+/* Overall */
+.overall-team-item{display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px}
+.overall-bar-wrap{flex:1}
+.overall-bar-label{display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px}
+.overall-bar-bg{height:6px;background:var(--surface2);border-radius:3px}
+.overall-bar-fill{height:6px;border-radius:3px;background:var(--accent);transition:width .4s ease}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* Toast */
+.toast{position:fixed;bottom:20px;right:20px;background:var(--text);color:#fff;padding:10px 16px;border-radius:var(--radius);font-size:13px;z-index:9999;transform:translateY(10px);opacity:0;transition:all .25s;pointer-events:none}
+.toast.show{transform:translateY(0);opacity:1}
+
+.section-gap{margin-bottom:20px}
+
+/* Bib search */
+.num-search-wrap{display:flex;align-items:center;gap:6px}
+.num-search-wrap input{width:80px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--radius);font-family:'DM Mono',monospace;font-size:13px;outline:none}
+.num-search-wrap input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(37,99,235,.1)}
+
+/* Row states */
+tr.highlight-row td{background:#fffbeb!important}
+tr.highlight-row td:first-child{border-left:3px solid var(--gold)}
+tr.scored-row td{background:var(--surface2)!important;opacity:.72}
+
+/* Firebase config */
+.config-grid{display:grid;gap:10px}
+.config-field label{display:block;font-size:11px;font-weight:500;color:var(--text2);margin-bottom:4px}
+.config-field input{width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:'DM Mono',monospace;outline:none}
+.config-field input:focus{border-color:var(--accent)}
+
+/* Participant sub-tabs */
+.ptab-bar{display:flex;gap:4px;margin-bottom:16px;background:var(--surface2);padding:4px;border-radius:var(--radius)}
+.ptab-btn{flex:1;padding:7px;border:none;background:none;border-radius:8px;font-family:inherit;font-size:12px;color:var(--text2);cursor:pointer;transition:all .15s}
+.ptab-btn.active{background:var(--surface);color:var(--text);font-weight:500;box-shadow:var(--shadow)}
+
+/* group section */
+.group-section{margin-bottom:18px}
+.group-section-title{font-size:12px;font-weight:600;color:var(--text2);padding:8px 12px;background:var(--surface2);border-radius:8px 8px 0 0;border:1px solid var(--border);border-bottom:none}
+.group-section table{border-radius:0 0 8px 8px;overflow:hidden}
+</style>
+</head>
+<body>
+
+<!-- ── 대회 선택 화면 ── -->
+<div id="contest-screen">
+  <div class="contest-wrap">
+    <h1>🏆 줄넘기 대회 관리</h1>
+    <p>대회를 선택하거나 새 대회를 추가하세요</p>
+    <div class="contest-list" id="contest-list"></div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="openModal('modal-add-contest')">＋ 새 대회 추가</button>
+    <div style="margin-top:12px;text-align:center;">
+      <button class="btn btn-secondary btn-sm" onclick="openFirebaseModal()">🔥 Firebase 설정</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 메인 앱 ── -->
+<div class="app" id="main-app" style="display:none;">
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <h1 id="sidebar-contest-name">대회명</h1>
+      <div class="contest-date" id="sidebar-contest-date"></div>
+      <div class="sync-label">
+        <span class="sync-dot" id="sync-dot"></span>
+        <span id="sync-text">로컬 모드</span>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">메뉴</div>
+      <button class="nav-btn active" onclick="showPage('dashboard')" id="nav-dashboard"><span class="icon">📊</span>대시보드</button>
+      <button class="nav-btn" onclick="showPage('participants')" id="nav-participants"><span class="icon">👥</span>참가자 관리</button>
+      <button class="nav-btn" onclick="showPage('overall')" id="nav-overall"><span class="icon">🥇</span>전체 순위</button>
+      <button class="nav-btn" onclick="showPage('certificate')" id="nav-certificate"><span class="icon">📜</span>상장</button>
+      <div class="nav-section-label" style="margin-top:8px;">종목</div>
+      <div id="event-nav-list"></div>
+    </nav>
+    <div class="sidebar-footer">
+      <button class="btn-add-event" onclick="openAddEventModal()"><span>＋</span>종목 추가</button>
+      <button class="btn-edit-mode" id="btn-edit-mode" onclick="toggleEditMode()"><span>✏️</span>종목 편집</button>
+      <button class="btn-add-event" onclick="openFirebaseModal()"><span>🔥</span>Firebase 설정</button>
+      <button class="btn-add-event" onclick="saveContest()" style="border-color:var(--success);color:var(--success)"><span>💾</span>저장</button>
+      <button class="btn-add-event" onclick="backToContestScreen()"><span>←</span>대회 목록</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <span class="topbar-title" id="page-title">대시보드</span>
+      <div class="topbar-actions" id="topbar-actions"></div>
+    </div>
+    <div class="content">
+
+      <!-- Dashboard -->
+      <div class="page active" id="page-dashboard">
+        <div class="stats-row" id="dashboard-stats"></div>
+        <div id="dashboard-events"></div>
+      </div>
+
+      <!-- Participants -->
+      <div class="page" id="page-participants">
+        <div class="tabs" id="participant-main-tabs">
+          <button class="tab-btn active" onclick="switchPMainTab('tab-manage',this)">직접 추가</button>
+          <button class="tab-btn" onclick="switchPMainTab('tab-excel',this)">엑셀로 불러오기</button>
+          <button class="tab-btn" onclick="switchPMainTab('tab-bygrade',this)">학년별 보기</button>
+          <button class="tab-btn" onclick="switchPMainTab('tab-byteam',this)">소속별 보기</button>
+        </div>
+
+        <div id="tab-manage">
+          <div class="card section-gap">
+            <div class="card-header"><span class="card-title">참가자 추가</span></div>
+            <div class="card-body">
+              <div class="form-row form-row-3">
+                <div class="form-group"><label class="form-label">배번호</label><input class="form-control" id="inp-num" type="number" placeholder="예) 1" min="1"></div>
+                <div class="form-group"><label class="form-label">이름 *</label><input class="form-control" id="inp-name" placeholder="이름 입력"></div>
+                <div class="form-group"><label class="form-label">소속</label><input class="form-control" id="inp-team" placeholder="팀명 입력"></div>
+              </div>
+              <div class="form-row form-row-2">
+                <div class="form-group"><label class="form-label">학년</label><input class="form-control" id="inp-grade" type="number" placeholder="예) 3" min="1" max="12"></div>
+                <div class="form-group"><label class="form-label">학교</label><input class="form-control" id="inp-extra" placeholder="학교명 입력"></div>
+              </div>
+              <button class="btn btn-primary" onclick="addParticipant()">+ 참가자 추가</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">참가자 목록 (<span id="participant-count">0</span>명)</span>
+              <div style="display:flex;gap:8px;">
+                <input class="form-control" id="search-input" placeholder="🔍 이름·소속 검색..." style="width:180px;padding:6px 10px;" oninput="renderParticipants()">
+                <button class="btn btn-danger btn-sm" onclick="clearAllParticipants()">전체 삭제</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table><thead><tr><th style="width:50px;">배번</th><th>이름</th><th>소속</th><th style="width:60px;">학년</th><th>학교</th><th style="width:60px;"></th></tr></thead>
+              <tbody id="participants-table"><tr><td colspan="6" style="text-align:center;color:var(--text3);padding:24px;">참가자가 없습니다</td></tr></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <div id="tab-excel" style="display:none;">
+          <div class="card section-gap">
+            <div class="card-header"><span class="card-title">엑셀 파일 불러오기</span></div>
+            <div class="card-body">
+              <div class="alert alert-info">첫 행은 헤더여야 하며 <strong>이름</strong> 열은 필수입니다.<br>인식 가능한 열: <strong>배번호/번호, 이름/성명, 소속/팀, 학년, 학교</strong></div>
+              <div class="upload-zone" onclick="document.getElementById('excel-file').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleDrop(event)">
+                <div class="upload-zone-icon">📂</div>
+                <p><strong>클릭하거나 파일을 여기에 드래그</strong></p>
+                <p style="margin-top:4px;font-size:12px;color:var(--text3);">.xlsx, .xls 파일 지원</p>
+              </div>
+              <input type="file" id="excel-file" accept=".xlsx,.xls" style="display:none" onchange="handleExcelUpload(event)">
+            </div>
+          </div>
+        </div>
+
+        <div id="tab-bygrade" style="display:none;">
+          <div id="grade-view-content"></div>
+        </div>
+        <div id="tab-byteam" style="display:none;">
+          <div id="team-view-content"></div>
+        </div>
+      </div>
+
+      <!-- Event -->
+      <div class="page" id="page-event"><div id="event-content"></div></div>
+
+      <!-- Overall -->
+      <div class="page" id="page-overall"><div id="overall-content"></div></div>
+
+      <!-- Certificate -->
+      <div class="page" id="page-certificate">
+        <div class="tabs" id="cert-main-tabs">
+          <button class="tab-btn active" onclick="switchCertTab('cert-tab-settings',this)">⚙️ 상장 설정</button>
+          <button class="tab-btn" onclick="switchCertTab('cert-tab-print',this)">🖨️ 상장 출력</button>
+        </div>
+
+        <!-- 설정 탭 -->
+        <div id="cert-tab-settings">
+          <div class="card section-gap">
+            <div class="card-header"><span class="card-title">📜 상장 설정</span></div>
+            <div class="card-body">
+              <div class="alert alert-info" style="font-size:12px;line-height:1.9;">
+                <strong>사용 방법</strong><br>
+                1. Word 상장 파일(.docx)을 아래에 업로드하세요<br>
+                2. 파일 안에 <strong>(제   *** 호)</strong>, <strong>(종목)</strong>, <strong>(학년)</strong>, <strong>(상)</strong>, <strong>(학교)</strong>, <strong>(이름)</strong>, <strong>(기록)</strong>, <strong>(****년 **월 **일)</strong> 괄호가 있어야 합니다<br>
+                3. 제 호수와 날짜를 입력하세요<br>
+                4. <strong>상장 출력</strong> 탭에서 참가자를 선택 후 출력하세요
+              </div>
+              <div class="form-row form-row-2">
+                <div class="form-group">
+                  <label class="form-label">제 ___ 호 (호수)</label>
+                  <input class="form-control" id="cert-number" placeholder="예) 2025-001" oninput="saveCertSettings()">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">날짜</label>
+                  <input class="form-control" id="cert-date" type="date" oninput="saveCertSettings()">
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Word 상장 파일 업로드 (.docx)</label>
+                <div class="upload-zone" id="cert-upload-zone"
+                  onclick="document.getElementById('cert-docx-file').click()"
+                  ondragover="event.preventDefault();this.classList.add('drag')"
+                  ondragleave="this.classList.remove('drag')"
+                  ondrop="handleCertDocxDrop(event)">
+                  <div class="upload-zone-icon" id="cert-upload-icon">📄</div>
+                  <p id="cert-upload-text"><strong>클릭하거나 .docx 파일을 드래그</strong></p>
+                  <p style="margin-top:4px;font-size:12px;color:var(--text3);">.docx 파일만 지원 (Word 형식)</p>
+                </div>
+                <input type="file" id="cert-docx-file" accept=".docx" style="display:none" onchange="handleCertDocxUpload(event)">
+              </div>
+              <div id="cert-file-info" style="display:none;margin-top:8px;padding:10px 14px;background:var(--success-bg);border:1px solid #bbf7d0;border-radius:var(--radius);">
+                <span style="font-size:13px;color:#15803d;">✅ 업로드됨: </span><span id="cert-file-name" style="font-size:13px;font-weight:600;color:#15803d;"></span>
+                <button class="btn btn-danger btn-xs" style="margin-left:12px;" onclick="removeCertDocx()">삭제</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 출력 탭 -->
+        <div id="cert-tab-print" style="display:none;">
+          <div id="cert-print-content"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- 대회 추가 Modal -->
+<div class="modal-overlay" id="modal-add-contest">
+  <div class="modal">
+    <div class="modal-header"><span class="modal-title">새 대회 추가</span><button class="modal-close" onclick="closeModal('modal-add-contest')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label">대회 이름 *</label><input class="form-control" id="contest-name-inp" placeholder="예) 2025 줄넘기 대회"></div>
+      <div class="form-row form-row-2">
+        <div class="form-group"><label class="form-label">날짜</label><input class="form-control" id="contest-date-inp" type="date"></div>
+        <div class="form-group"><label class="form-label">장소 (선택)</label><input class="form-control" id="contest-place-inp" placeholder="예) 체육관"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-add-contest')">취소</button>
+      <button class="btn btn-primary" onclick="addContest()">추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- 종목 추가 Modal -->
+<div class="modal-overlay" id="modal-add-event">
+  <div class="modal">
+    <div class="modal-header"><span class="modal-title">종목 추가</span><button class="modal-close" onclick="closeModal('modal-add-event')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label">종목명 *</label><input class="form-control" id="event-name-inp" placeholder="예) 일도약, 이중뛰기"></div>
+      <div class="form-group"><label class="form-label">그룹명 (같은 이름으로 묶을 때 입력)</label><input class="form-control" id="event-group-inp" placeholder="예) 일도약  ← 비워두면 독립 종목"></div>
+      <div class="form-group"><label class="form-label">순위 방식 *</label>
+        <select class="form-control" id="event-rank-type">
+          <option value="desc">기록이 높을수록 1위</option>
+          <option value="asc">기록이 낮을수록 1위</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">단위 (선택)</label><input class="form-control" id="event-unit-inp" placeholder="예) 회, 초, 점"></div>
+      <div class="form-group"><label class="form-label">대상 학년 (선택, 비워두면 전체)</label><input class="form-control" id="event-grade-inp" placeholder="예) 1, 3-6"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-add-event')">취소</button>
+      <button class="btn btn-primary" onclick="addEvent()">추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- 참가자 수정 Modal -->
+<div class="modal-overlay" id="modal-edit-participant">
+  <div class="modal">
+    <div class="modal-header"><span class="modal-title">참가자 수정</span><button class="modal-close" onclick="closeModal('modal-edit-participant')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-participant-id">
+      <div class="form-row form-row-2">
+        <div class="form-group"><label class="form-label">배번호</label><input class="form-control" id="edit-num" type="number"></div>
+        <div class="form-group"><label class="form-label">이름 *</label><input class="form-control" id="edit-name"></div>
+      </div>
+      <div class="form-row form-row-2">
+        <div class="form-group"><label class="form-label">소속</label><input class="form-control" id="edit-team"></div>
+        <div class="form-group"><label class="form-label">학년</label><input class="form-control" id="edit-grade" type="number"></div>
+      </div>
+      <div class="form-group"><label class="form-label">학교</label><input class="form-control" id="edit-extra"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-edit-participant')">취소</button>
+      <button class="btn btn-primary" onclick="saveEditParticipant()">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 종목 수정 Modal -->
+<div class="modal-overlay" id="modal-edit-event">
+  <div class="modal">
+    <div class="modal-header"><span class="modal-title">종목 수정</span><button class="modal-close" onclick="closeModal('modal-edit-event')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-event-id">
+      <div class="form-group"><label class="form-label">종목명 *</label><input class="form-control" id="edit-event-name"></div>
+      <div class="form-group"><label class="form-label">그룹명 (같은 이름으로 묶을 때)</label><input class="form-control" id="edit-event-group" placeholder="비워두면 독립 종목"></div>
+      <div class="form-group"><label class="form-label">순위 방식 *</label>
+        <select class="form-control" id="edit-event-rank-type">
+          <option value="desc">기록이 높을수록 1위</option>
+          <option value="asc">기록이 낮을수록 1위</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">단위 (선택)</label><input class="form-control" id="edit-event-unit"></div>
+      <div class="form-group"><label class="form-label">대상 학년 (선택)</label><input class="form-control" id="edit-event-grade"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-edit-event')">취소</button>
+      <button class="btn btn-primary" onclick="saveEditEvent()">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase Modal -->
+<div class="modal-overlay" id="modal-firebase">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-header"><span class="modal-title">🔥 Firebase 실시간 동기화 설정</span><button class="modal-close" onclick="closeModal('modal-firebase')">✕</button></div>
+    <div class="modal-body">
+      <div class="alert alert-info" style="font-size:12px;line-height:1.7;">
+        <strong>설정 방법</strong><br>
+        1. <a href="https://console.firebase.google.com" target="_blank" style="color:var(--accent);">Firebase 콘솔</a>에서 프로젝트 생성<br>
+        2. Realtime Database → 데이터베이스 만들기 (테스트 모드)<br>
+        3. 프로젝트 설정 → 웹 앱 추가 → 아래 값 붙여넣기
+      </div>
+      <div class="config-grid">
+        <div class="config-field"><label>API Key *</label><input id="fb-apiKey" placeholder="AIzaSy..."></div>
+        <div class="config-field"><label>Auth Domain *</label><input id="fb-authDomain" placeholder="your-app.firebaseapp.com"></div>
+        <div class="config-field"><label>Database URL *</label><input id="fb-databaseURL" placeholder="https://your-app-default-rtdb.firebaseio.com"></div>
+        <div class="config-field"><label>Project ID *</label><input id="fb-projectId" placeholder="your-app"></div>
+        <div class="config-field"><label>Storage Bucket (선택)</label><input id="fb-storageBucket" placeholder="your-app.appspot.com"></div>
+        <div class="config-field"><label>Messaging Sender ID (선택)</label><input id="fb-messagingSenderId" placeholder="123456789"></div>
+        <div class="config-field"><label>App ID (선택)</label><input id="fb-appId" placeholder="1:123..."></div>
+        <div class="config-field"><label>Measurement ID (선택)</label><input id="fb-measurementId" placeholder="G-XXXXXXXXXX"></div>
+      </div>
+    </div>
+    <div class="modal-footer" style="justify-content:space-between;">
+      <button class="btn btn-danger btn-sm" onclick="disconnectFirebase()">연결 해제</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-secondary" onclick="closeModal('modal-firebase')">취소</button>
+        <button class="btn btn-primary" onclick="connectFirebase()">🔥 연결</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════
+let contests   = [];   // [{id,name,date,place}]
+let currentContestId = null;
+let participants = [];
+let events     = [];
+let currentEventId  = null;
+let currentPage = 'dashboard';
+let pidCounter  = 1;
+let eidCounter  = 1;
+let editMode    = false;
+
+// ══════════════════════════════════════════════
+// LOCAL STORAGE — 대회 목록
+// ══════════════════════════════════════════════
+function saveContestList() {
+  try { localStorage.setItem('contest_list', JSON.stringify(contests)); } catch(e){}
+}
+function loadContestList() {
+  try {
+    const c = localStorage.getItem('contest_list');
+    if (c) contests = JSON.parse(c);
+  } catch(e){}
+}
+
+// 특정 대회 데이터를 로컬에 저장
+function saveContestData(id) {
+  const data = getContestData();
+  try { localStorage.setItem('contest_data_' + id, JSON.stringify(data)); } catch(e){}
+}
+function loadContestData(id) {
+  try {
+    const d = localStorage.getItem('contest_data_' + id);
+    if (d) applyContestData(JSON.parse(d));
+  } catch(e){}
+}
+function getContestData() {
+  return { participants, events, pidCounter, eidCounter };
+}
+function applyContestData(data) {
+  if (data.participants !== undefined) participants = data.participants || [];
+  if (data.events !== undefined) events = data.events || [];
+  if (data.pidCounter) pidCounter = data.pidCounter;
+  if (data.eidCounter) eidCounter = data.eidCounter;
+}
+
+// 💾 저장 버튼
+function saveContest() {
+  if (!currentContestId) return;
+  saveContestData(currentContestId);
+  fbSave();
+  showToast('💾 저장 완료');
+}
+
+// 자동 저장 (데이터 변경 시)
+function save() {
+  if (currentContestId) saveContestData(currentContestId);
+}
+
+// ══════════════════════════════════════════════
+// CONTEST SCREEN
+// ══════════════════════════════════════════════
+function renderContestScreen() {
+  const list = document.getElementById('contest-list');
+  if (!contests.length) {
+    list.innerHTML = `<div class="empty-state" style="padding:24px 0;"><div class="empty-state-icon">🏆</div><p>아직 대회가 없습니다</p></div>`;
+    return;
+  }
+  list.innerHTML = contests.map(c => `
+    <div class="contest-item" onclick="enterContest('${c.id}')">
+      <div class="contest-item-info">
+        <h3>${c.name}</h3>
+        <span>${c.date || '날짜 미정'}${c.place ? ' · ' + c.place : ''}</span>
+      </div>
+      <div class="contest-item-actions" onclick="event.stopPropagation()">
+        <button class="btn btn-danger btn-xs" onclick="deleteContest('${c.id}')">삭제</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function addContest() {
+  const name = document.getElementById('contest-name-inp').value.trim();
+  if (!name) { showToast('대회 이름을 입력해주세요'); return; }
+  const id = 'c' + Date.now();
+  const c = {
+    id, name,
+    date: document.getElementById('contest-date-inp').value,
+    place: document.getElementById('contest-place-inp').value.trim()
+  };
+  contests.push(c);
+  saveContestList();
+  closeModal('modal-add-contest');
+  document.getElementById('contest-name-inp').value = '';
+  document.getElementById('contest-date-inp').value = '';
+  document.getElementById('contest-place-inp').value = '';
+  enterContest(id);
+}
+
+function deleteContest(id) {
+  const c = contests.find(x => x.id === id);
+  if (!confirm(`"${c?.name}" 대회를 삭제할까요?\n(데이터도 함께 삭제됩니다)`)) return;
+  contests = contests.filter(x => x.id !== id);
+  saveContestList();
+  try { localStorage.removeItem('contest_data_' + id); } catch(e){}
+  renderContestScreen();
+  showToast('삭제 완료');
+}
+
+function enterContest(id) {
+  currentContestId = id;
+  const c = contests.find(x => x.id === id);
+
+  // 초기화
+  participants = []; events = []; pidCounter = 1; eidCounter = 1;
+
+  // 로컬 데이터 로드
+  loadContestData(id);
+
+  // UI
+  document.getElementById('sidebar-contest-name').textContent = '🏆 ' + c.name;
+  document.getElementById('sidebar-contest-date').textContent = c.date || '';
+  document.getElementById('contest-screen').style.display = 'none';
+  document.getElementById('main-app').style.display = 'flex';
+
+  // Firebase: 대회별 경로로 리슨
+  if (db) fbListenContest(id);
+
+  renderEventNav();
+  renderParticipants();
+  renderDashboard();
+  showPage('dashboard');
+}
+
+function backToContestScreen() {
+  save();
+  // Firebase 리스너 해제
+  if (db) { try { db.ref('contests/' + currentContestId).off(); } catch(e){} }
+  currentContestId = null;
+  participants = []; events = [];
+  document.getElementById('main-app').style.display = 'none';
+  document.getElementById('contest-screen').style.display = 'flex';
+  renderContestScreen();
+}
+
+// ══════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function getRankBadge(rank) {
+  if (rank===1) return `<span class="rank-circle rank-1">1</span>`;
+  if (rank===2) return `<span class="rank-circle rank-2">2</span>`;
+  if (rank===3) return `<span class="rank-circle rank-3">3</span>`;
+  return `<span class="rank-circle rank-n">${rank}</span>`;
+}
+
+function saveMedalCriteria(eventId) {
+  const ev = events.find(e => e.id === eventId);
+  if (!ev) return;
+  const g = document.getElementById(`mc-gold-${eventId}`)?.value;
+  const s = document.getElementById(`mc-silver-${eventId}`)?.value;
+  const b = document.getElementById(`mc-bronze-${eventId}`)?.value;
+  ev.medalCriteria = {
+    gold: g !== '' ? parseFloat(g) : null,
+    silver: s !== '' ? parseFloat(s) : null,
+    bronze: b !== '' ? parseFloat(b) : null
+  };
+  save(); fbSave();
+  // 상 판정 셀 전체 갱신
+  const filtered = filterParticipantsByGrade(participants, ev.targetGrade);
+  filtered.forEach(p => {
+    const aCell = document.getElementById(`award-cell-${eventId}-${p.id}`);
+    if (aCell) {
+      const sc = ev.scores[p.id];
+      const isS = sc !== undefined && sc !== '' && !isNaN(parseFloat(sc));
+      aCell.innerHTML = isS ? getAwardBadge(ev, parseFloat(sc)) : `<span style="color:var(--text3);font-size:12px;">-</span>`;
+    }
+  });
+}
+
+function getAwardBadge(ev, score) {
+  const mc = ev.medalCriteria;
+  if (!mc || (mc.gold === null && mc.silver === null && mc.bronze === null)) return `<span style="color:var(--text3);font-size:12px;">-</span>`;
+  const desc = ev.rankType !== 'asc';
+  let award = '장려상';
+  let color = '#6b7280'; let bg = '#f3f4f6';
+  if (mc.gold !== null && (desc ? score >= mc.gold : score <= mc.gold)) { award='🥇 금상'; color='#c9910a'; bg='#fef9ec'; }
+  else if (mc.silver !== null && (desc ? score >= mc.silver : score <= mc.silver)) { award='🥈 은상'; color='#4b5563'; bg='#f3f4f6'; }
+  else if (mc.bronze !== null && (desc ? score >= mc.bronze : score <= mc.bronze)) { award='🥉 동상'; color='#b45309'; bg='#fef3c7'; }
+  return `<span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:4px;background:${bg};color:${color};">${award}</span>`;
+}
+
+function getAwardText(ev, score) {
+  const mc = ev.medalCriteria;
+  if (!mc || (mc.gold === null && mc.silver === null && mc.bronze === null)) return '장려상';
+  const desc = ev.rankType !== 'asc';
+  if (mc.gold !== null && (desc ? score >= mc.gold : score <= mc.gold)) return '금상';
+  if (mc.silver !== null && (desc ? score >= mc.silver : score <= mc.silver)) return '은상';
+  if (mc.bronze !== null && (desc ? score >= mc.bronze : score <= mc.bronze)) return '동상';
+  return '장려상';
+}
+
+function getTeamColor(team) {
+  if (!team) return '';
+  const colors = ['#dbeafe','#dcfce7','#fef9c3','#fce7f3','#e0e7ff','#ffedd5','#f0fdf4','#fdf4ff'];
+  let hash = 0;
+  for (let c of team) hash = (hash * 31 + c.charCodeAt(0)) & 0xffff;
+  return `background:${colors[hash % colors.length]};color:#374151;`;
+}
+
+function parseTargetGrades(tg) {
+  if (!tg || !tg.trim()) return null;
+  const grades = new Set();
+  tg.split(',').forEach(part => {
+    part = part.trim();
+    const m = part.match(/^(\d+)\s*[-~]\s*(\d+)$/);
+    if (m) { for (let g = +m[1]; g <= +m[2]; g++) grades.add(g); }
+    else { const n = parseInt(part); if (!isNaN(n)) grades.add(n); }
+  });
+  return grades.size > 0 ? grades : null;
+}
+function filterParticipantsByGrade(list, tg) {
+  const g = parseTargetGrades(tg);
+  return g ? list.filter(p => p.grade && g.has(parseInt(p.grade))) : list;
+}
+
+function computeRankings(eventId) {
+  const ev = events.find(e => e.id === eventId);
+  if (!ev) return [];
+  const entries = Object.entries(ev.scores || {})
+    .filter(([,s]) => s !== '' && s !== null && s !== undefined && !isNaN(parseFloat(s)))
+    .map(([pid, s]) => ({ pid: parseInt(pid), participant: participants.find(x => x.id == pid), score: parseFloat(s) }))
+    .filter(e => e.participant);
+  entries.sort((a,b) => ev.rankType === 'asc' ? a.score - b.score : b.score - a.score);
+  let rank = 1;
+  for (let i = 0; i < entries.length; i++) {
+    if (i > 0 && entries[i].score !== entries[i-1].score) rank = i + 1;
+    entries[i].rank = rank;
+  }
+  return entries;
+}
+
+// ══════════════════════════════════════════════
+// NAVIGATION
+// ══════════════════════════════════════════════
+function showPage(page, eventId) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.grade-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.nav-group-header').forEach(b => b.classList.remove('active'));
+  currentPage = page;
+  currentEventId = eventId || null;
+
+  if (page === 'dashboard') {
+    document.getElementById('page-dashboard').classList.add('active');
+    document.getElementById('nav-dashboard').classList.add('active');
+    document.getElementById('page-title').textContent = '대시보드';
+    setTopbarActions([]);
+    renderDashboard();
+  } else if (page === 'participants') {
+    document.getElementById('page-participants').classList.add('active');
+    document.getElementById('nav-participants').classList.add('active');
+    document.getElementById('page-title').textContent = '참가자 관리';
+    setTopbarActions([`<button class="btn btn-secondary btn-sm" onclick="exportParticipantsExcel()">📥 엑셀 다운로드</button>`]);
+    renderParticipants();
+  } else if (page === 'event' && eventId) {
+    document.getElementById('page-event').classList.add('active');
+    const ev = events.find(e => e.id === eventId);
+    document.getElementById('page-title').textContent = ev ? ev.name + (ev.targetGrade ? ` (${ev.targetGrade}학년)` : '') : '종목';
+    setTopbarActions([
+      `<button class="btn btn-secondary btn-sm" onclick="exportEventExcel(${eventId})">📥 엑셀 다운로드</button>`,
+      `<button class="btn btn-secondary btn-sm" onclick="openEditEventModal(${eventId})">✏️ 종목 수정</button>`
+    ]);
+    renderEventPage(eventId);
+    // 사이드바 활성화
+    const navItem = document.querySelector(`.grade-btn[data-id="${eventId}"]`);
+    if (navItem) navItem.classList.add('active');
+    // 그룹헤더 활성화
+    if (ev?.group) {
+      const gh = document.querySelector(`.nav-group-header[data-group="${CSS.escape(ev.group)}"]`);
+      if (gh) gh.classList.add('active');
+    }
+  } else if (page === 'overall') {
+    document.getElementById('page-overall').classList.add('active');
+    document.getElementById('nav-overall').classList.add('active');
+    document.getElementById('page-title').textContent = '전체 순위';
+    setTopbarActions([`<button class="btn btn-secondary btn-sm" onclick="exportOverallExcel()">📥 엑셀 다운로드</button>`]);
+    renderOverall();
+  } else if (page === 'certificate') {
+    document.getElementById('page-certificate').classList.add('active');
+    document.getElementById('nav-certificate').classList.add('active');
+    document.getElementById('page-title').textContent = '상장';
+    setTopbarActions([]);
+    loadCertSettings();
+  }}
+function setTopbarActions(arr) {
+  document.getElementById('topbar-actions').innerHTML = arr.join('');
+}
+
+// ══════════════════════════════════════════════
+// EVENT NAV — 그룹 묶기 + 편집 모드
+// ══════════════════════════════════════════════
+let expandedGroups = new Set();
+
+function renderEventNav() {
+  const list = document.getElementById('event-nav-list');
+  // 그룹별로 묶기: group 있으면 그룹, 없으면 단독
+  const groups = {}; // groupName → [ev]
+  const singles = []; // 그룹 없는 종목
+  events.forEach(ev => {
+    if (ev.group && ev.group.trim()) {
+      const g = ev.group.trim();
+      if (!groups[g]) groups[g] = [];
+      groups[g].push(ev);
+    } else {
+      singles.push(ev);
+    }
+  });
+
+  let html = '';
+
+  // 그룹 종목
+  Object.entries(groups).forEach(([g, evList]) => {
+    const isOpen = expandedGroups.has(g);
+    html += `
+      <div class="nav-group" data-group="${g}">
+        <div class="nav-group-header ${isOpen ? '' : ''}" data-group="${g}">
+          <button class="nav-group-btn" onclick="toggleGroup('${g}')" style="font-weight:600;">🎯 ${g}</button>
+          <button class="nav-group-toggle" onclick="toggleGroup('${g}')">${isOpen ? '▴' : '▾'}</button>
+          ${editMode ? `<div class="nav-edit-row" style="display:flex;">` +
+            evList.map(ev => ``).join('') + `</div>` : ''}
+        </div>
+        <div class="nav-group-children" style="${isOpen ? '' : 'display:none'}">
+          ${evList.map((ev, idx) => `
+            <div style="display:flex;align-items:center;">
+              <button class="grade-btn" data-id="${ev.id}" onclick="showPage('event',${ev.id})">
+                ${ev.targetGrade ? ev.targetGrade + '학년' : ev.name}
+              </button>
+              ${editMode ? `
+                <button class="nav-edit-up" onclick="moveEvent(${ev.id},-1)" title="위로">↑</button>
+                <button class="nav-edit-dn" onclick="moveEvent(${ev.id},1)" title="아래로">↓</button>
+                <button class="nav-edit-del" onclick="deleteEvent(${ev.id})">삭제</button>
+              ` : ''}
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
+  });
+
+  // 단독 종목
+  singles.forEach((ev, idx) => {
+    html += `
+      <div style="display:flex;align-items:center;margin-bottom:1px;">
+        <button class="nav-btn grade-btn" data-id="${ev.id}" onclick="showPage('event',${ev.id})" style="flex:1;padding:7px 10px;font-size:12px;">
+          🎯 ${ev.name}${ev.targetGrade ? ` <span style="font-size:10px;color:var(--text3);">(${ev.targetGrade}학년)</span>` : ''}
+        </button>
+        ${editMode ? `
+          <button class="nav-edit-up" onclick="moveEvent(${ev.id},-1)">↑</button>
+          <button class="nav-edit-dn" onclick="moveEvent(${ev.id},1)">↓</button>
+          <button class="nav-edit-del" onclick="deleteEvent(${ev.id})">삭제</button>
+        ` : ''}
+      </div>`;
+  });
+
+  list.innerHTML = html || `<div style="padding:8px 10px;font-size:12px;color:var(--text3);">종목 없음</div>`;
+
+  // 현재 선택된 항목 활성화
+  if (currentEventId) {
+    const b = list.querySelector(`.grade-btn[data-id="${currentEventId}"]`);
+    if (b) b.classList.add('active');
+    const ev = events.find(e => e.id === currentEventId);
+    if (ev?.group) {
+      const gh = list.querySelector(`.nav-group-header[data-group="${ev.group}"]`);
+      if (gh) gh.classList.add('active');
+    }
+  }
+}
+
+function toggleGroup(g) {
+  if (expandedGroups.has(g)) expandedGroups.delete(g);
+  else expandedGroups.add(g);
+  renderEventNav();
+}
+
+function toggleEditMode() {
+  editMode = !editMode;
+  document.getElementById('sidebar').classList.toggle('edit-mode', editMode);
+  document.getElementById('btn-edit-mode').innerHTML = editMode ? '<span>✅</span>편집 완료' : '<span>✏️</span>종목 편집';
+  renderEventNav();
+}
+
+function moveEvent(id, dir) {
+  const idx = events.findIndex(e => e.id === id);
+  if (idx < 0) return;
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= events.length) return;
+  [events[idx], events[newIdx]] = [events[newIdx], events[idx]];
+  save(); fbSave();
+  renderEventNav();
+}
+
+// ══════════════════════════════════════════════
+// PARTICIPANTS
+// ══════════════════════════════════════════════
+function switchPMainTab(tabId, btn) {
+  document.querySelectorAll('#participant-main-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  ['tab-manage','tab-excel','tab-bygrade','tab-byteam'].forEach(id => {
+    document.getElementById(id).style.display = id === tabId ? 'block' : 'none';
+  });
+  if (tabId === 'tab-bygrade') renderGradeView();
+  if (tabId === 'tab-byteam') renderTeamView();
+}
+
+function addParticipant() {
+  const name = document.getElementById('inp-name').value.trim();
+  if (!name) { showToast('이름을 입력해주세요'); return; }
+  participants.push({ id: pidCounter++, num: document.getElementById('inp-num').value || '', name, team: document.getElementById('inp-team').value.trim(), grade: document.getElementById('inp-grade').value || '', extra: document.getElementById('inp-extra').value.trim() });
+  ['inp-num','inp-name','inp-team','inp-grade','inp-extra'].forEach(id => document.getElementById(id).value = '');
+  save(); fbSave();
+  renderParticipants();
+  showToast(`${name} 추가 완료`);
+}
+function deleteParticipant(id) {
+  participants = participants.filter(p => p.id !== id);
+  save(); fbSave(); renderParticipants();
+}
+function clearAllParticipants() {
+  if (!confirm('참가자 전체를 삭제할까요?')) return;
+  participants = []; save(); fbSave(); renderParticipants(); showToast('전체 삭제 완료');
+}
+function openEditParticipantModal(id) {
+  const p = participants.find(x => x.id === id);
+  if (!p) return;
+  document.getElementById('edit-participant-id').value = id;
+  document.getElementById('edit-num').value = p.num;
+  document.getElementById('edit-name').value = p.name;
+  document.getElementById('edit-team').value = p.team;
+  document.getElementById('edit-grade').value = p.grade;
+  document.getElementById('edit-extra').value = p.extra || '';
+  openModal('modal-edit-participant');
+}
+function saveEditParticipant() {
+  const id = parseInt(document.getElementById('edit-participant-id').value);
+  const p = participants.find(x => x.id === id);
+  if (!p) return;
+  const name = document.getElementById('edit-name').value.trim();
+  if (!name) { showToast('이름을 입력해주세요'); return; }
+  p.num = document.getElementById('edit-num').value;
+  p.name = name;
+  p.team = document.getElementById('edit-team').value.trim();
+  p.grade = document.getElementById('edit-grade').value;
+  p.extra = document.getElementById('edit-extra').value.trim();
+  save(); fbSave(); renderParticipants(); closeModal('modal-edit-participant'); showToast('수정 완료');
+}
+
+function sortedList(list) {
+  return [...list].sort((a,b) => (parseInt(a.num)||9999) - (parseInt(b.num)||9999) || a.name.localeCompare(b.name));
+}
+
+function participantRowHtml(p) {
+  return `<tr>
+    <td style="font-family:'DM Mono',monospace;color:var(--text3);">${p.num||'-'}</td>
+    <td><strong>${p.name}</strong></td>
+    <td>${p.team ? `<span class="team-tag" style="${getTeamColor(p.team)}">${p.team}</span>` : '-'}</td>
+    <td>${p.grade ? p.grade+'학년' : '-'}</td>
+    <td style="color:var(--text3);">${p.extra||''}</td>
+    <td><div style="display:flex;gap:4px;">
+      <button class="btn btn-secondary btn-xs" onclick="openEditParticipantModal(${p.id})">수정</button>
+      <button class="btn btn-danger btn-xs" onclick="deleteParticipant(${p.id})">삭제</button>
+    </div></td>
+  </tr>`;
+}
+
+function renderParticipants() {
+  const q = document.getElementById('search-input')?.value.toLowerCase() || '';
+  const list = sortedList(participants.filter(p =>
+    p.name.toLowerCase().includes(q) || (p.team && p.team.toLowerCase().includes(q))
+  ));
+  document.getElementById('participant-count').textContent = participants.length;
+  const tbody = document.getElementById('participants-table');
+  tbody.innerHTML = list.length ? list.map(participantRowHtml).join('') :
+    `<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:24px;">참가자가 없습니다</td></tr>`;
+}
+
+function gradeParticipantRowHtml(p) {
+  return `<tr>
+    <td style="width:60px;font-family:'DM Mono',monospace;color:var(--text3);">${p.num||'-'}</td>
+    <td style="min-width:90px;"><strong>${p.name}</strong></td>
+    <td style="min-width:80px;">${p.team ? `<span class="team-tag" style="${getTeamColor(p.team)}">${p.team}</span>` : '-'}</td>
+    <td style="min-width:80px;color:var(--text3);">${p.extra||''}</td>
+    <td style="width:90px;"><div style="display:flex;gap:4px;">
+      <button class="btn btn-secondary btn-xs" onclick="openEditParticipantModal(${p.id})">수정</button>
+      <button class="btn btn-danger btn-xs" onclick="deleteParticipant(${p.id})">삭제</button>
+    </div></td>
+  </tr>`;
+}
+
+function renderGradeView() {
+  const grades = [...new Set(participants.map(p => p.grade).filter(Boolean))].sort((a,b) => parseInt(a)-parseInt(b));
+  const noGrade = participants.filter(p => !p.grade);
+  const theadHtml = `<thead><tr>
+    <th style="width:60px;">배번</th>
+    <th style="min-width:90px;">이름</th>
+    <th style="min-width:80px;">소속</th>
+    <th style="min-width:80px;">학교</th>
+    <th style="width:90px;"></th>
+  </tr></thead>`;
+  let html = '';
+  grades.forEach(g => {
+    const list = sortedList(participants.filter(p => p.grade === g));
+    html += `<div class="group-section">
+      <div class="group-section-title">${g}학년 (${list.length}명)</div>
+      <div class="table-wrap"><table style="table-layout:fixed;width:100%;">${theadHtml}
+      <tbody>${list.map(gradeParticipantRowHtml).join('')}</tbody></table></div></div>`;
+  });
+  if (noGrade.length) {
+    html += `<div class="group-section">
+      <div class="group-section-title">학년 미지정 (${noGrade.length}명)</div>
+      <div class="table-wrap"><table style="table-layout:fixed;width:100%;">${theadHtml}
+      <tbody>${sortedList(noGrade).map(gradeParticipantRowHtml).join('')}</tbody></table></div></div>`;
+  }
+  document.getElementById('grade-view-content').innerHTML = html || `<div class="empty-state"><div class="empty-state-icon">👥</div><p>참가자가 없습니다</p></div>`;
+}
+
+function renderTeamView() {
+  const teams = [...new Set(participants.map(p => p.team).filter(Boolean))].sort();
+  const noTeam = participants.filter(p => !p.team);
+  let html = '';
+  teams.forEach(t => {
+    const list = sortedList(participants.filter(p => p.team === t));
+    html += `<div class="group-section">
+      <div class="group-section-title"><span class="team-tag" style="${getTeamColor(t)}">${t}</span> (${list.length}명)</div>
+      <table><thead><tr><th>배번</th><th>이름</th><th>학년</th><th>학교</th><th></th></tr></thead>
+      <tbody>${list.map(p => `<tr>
+        <td style="font-family:'DM Mono',monospace;color:var(--text3);">${p.num||'-'}</td>
+        <td><strong>${p.name}</strong></td>
+        <td>${p.grade ? p.grade+'학년' : '-'}</td>
+        <td style="color:var(--text3);">${p.extra||''}</td>
+        <td><div style="display:flex;gap:4px;">
+          <button class="btn btn-secondary btn-xs" onclick="openEditParticipantModal(${p.id})">수정</button>
+          <button class="btn btn-danger btn-xs" onclick="deleteParticipant(${p.id})">삭제</button>
+        </div></td>
+      </tr>`).join('')}</tbody></table></div>`;
+  });
+  if (noTeam.length) {
+    html += `<div class="group-section">
+      <div class="group-section-title">소속 미지정 (${noTeam.length}명)</div>
+      <table><thead><tr><th>배번</th><th>이름</th><th>학년</th><th></th></tr></thead>
+      <tbody>${sortedList(noTeam).map(p => `<tr>
+        <td>${p.num||'-'}</td><td><strong>${p.name}</strong></td><td>${p.grade ? p.grade+'학년' : '-'}</td>
+        <td><button class="btn btn-secondary btn-xs" onclick="openEditParticipantModal(${p.id})">수정</button></td>
+      </tr>`).join('')}</tbody></table></div>`;
+  }
+  document.getElementById('team-view-content').innerHTML = html || `<div class="empty-state"><div class="empty-state-icon">👥</div><p>참가자가 없습니다</p></div>`;
+}
+
+// ══════════════════════════════════════════════
+// EXCEL UPLOAD
+// ══════════════════════════════════════════════
+function handleDrop(e) {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (file) processExcel(file);
+}
+function handleExcelUpload(e) {
+  const file = e.target.files[0];
+  if (file) processExcel(file);
+  e.target.value = '';
+}
+function processExcel(file) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const wb = XLSX.read(e.target.result, { type:'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json(ws, { defval:'' });
+      if (!data.length) { showToast('데이터가 없습니다'); return; }
+      const colMap = {
+        num:['배번호','번호','배번','no','number'],
+        name:['이름','성명','name','성함'],
+        team:['소속','팀','team','단체'],
+        grade:['학년','grade'],
+        extra:['학교','추가정보','비고','메모','extra','note','school']
+      };
+      function findCol(row, keys) {
+        for (const key of Object.keys(row)) {
+          if (keys.includes(key.trim().toLowerCase()) || keys.some(k => key.trim().includes(k))) return key;
+        }
+        return null;
+      }
+      let added = 0;
+      data.forEach(row => {
+        const nameCol = findCol(row, colMap.name);
+        if (!nameCol || !row[nameCol]) return;
+        const name = String(row[nameCol]).trim();
+        if (!name) return;
+        participants.push({
+          id: pidCounter++,
+          num: findCol(row,colMap.num) ? String(row[findCol(row,colMap.num)]).trim() : '',
+          name,
+          team: findCol(row,colMap.team) ? String(row[findCol(row,colMap.team)]).trim() : '',
+          grade: findCol(row,colMap.grade) ? String(row[findCol(row,colMap.grade)]).trim() : '',
+          extra: findCol(row,colMap.extra) ? String(row[findCol(row,colMap.extra)]).trim() : ''
+        });
+        added++;
+      });
+      save(); fbSave(); renderParticipants(); showToast(`${added}명 불러오기 완료`);
+    } catch(err) { showToast('파일을 읽을 수 없습니다'); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ══════════════════════════════════════════════
+// EVENTS CRUD
+// ══════════════════════════════════════════════
+function openAddEventModal() {
+  ['event-name-inp','event-group-inp','event-unit-inp','event-grade-inp'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('event-rank-type').value = 'desc';
+  openModal('modal-add-event');
+}
+function addEvent() {
+  const name = document.getElementById('event-name-inp').value.trim();
+  if (!name) { showToast('종목명을 입력해주세요'); return; }
+  const ev = {
+    id: eidCounter++, name,
+    group: document.getElementById('event-group-inp').value.trim(),
+    rankType: document.getElementById('event-rank-type').value,
+    unit: document.getElementById('event-unit-inp').value.trim(),
+    targetGrade: document.getElementById('event-grade-inp').value.trim(),
+    scores: {}, overallPicks: {}
+  };
+  events.push(ev);
+  if (ev.group) expandedGroups.add(ev.group);
+  save(); fbSave(); renderEventNav(); closeModal('modal-add-event');
+  showToast(`"${name}" 종목 추가 완료`);
+  showPage('event', ev.id);
+}
+function deleteEvent(id) {
+  const ev = events.find(x => x.id === id);
+  if (!ev) return;
+  if (!confirm(`"${ev.name}" 종목을 삭제할까요?`)) return;
+  events = events.filter(x => x.id !== id);
+  save(); fbSave(); renderEventNav();
+  if (currentEventId === id) showPage('dashboard');
+  showToast('종목 삭제 완료');
+}
+function openEditEventModal(id) {
+  const ev = events.find(e => e.id == id);
+  if (!ev) return;
+  document.getElementById('edit-event-id').value = ev.id;
+  document.getElementById('edit-event-name').value = ev.name;
+  document.getElementById('edit-event-group').value = ev.group || '';
+  document.getElementById('edit-event-rank-type').value = ev.rankType;
+  document.getElementById('edit-event-unit').value = ev.unit || '';
+  document.getElementById('edit-event-grade').value = ev.targetGrade || '';
+  openModal('modal-edit-event');
+}
+function saveEditEvent() {
+  const id = parseInt(document.getElementById('edit-event-id').value);
+  const ev = events.find(e => e.id === id);
+  if (!ev) return;
+  const name = document.getElementById('edit-event-name').value.trim();
+  if (!name) { showToast('종목명을 입력해주세요'); return; }
+  ev.name = name;
+  ev.group = document.getElementById('edit-event-group').value.trim();
+  ev.rankType = document.getElementById('edit-event-rank-type').value;
+  ev.unit = document.getElementById('edit-event-unit').value.trim();
+  ev.targetGrade = document.getElementById('edit-event-grade').value.trim();
+  if (ev.group) expandedGroups.add(ev.group);
+  save(); fbSave(); renderEventNav(); closeModal('modal-edit-event');
+  if (currentEventId === id) showPage('event', id);
+  showToast('종목 수정 완료');
+}
+
+// ══════════════════════════════════════════════
+// EVENT PAGE
+// ══════════════════════════════════════════════
+function renderEventPage(eventId) {
+  const ev = events.find(e => e.id === eventId);
+  if (!ev) return;
+  if (!ev.scores) ev.scores = {};
+
+  const rankings = computeRankings(eventId);
+  const filteredParticipants = filterParticipantsByGrade(participants, ev.targetGrade);
+  const filteredScored = filteredParticipants.filter(p => {
+    const s = ev.scores[p.id]; return s !== '' && s !== undefined && !isNaN(parseFloat(s));
+  }).length;
+
+  let html = `<div class="stats-row">
+    <div class="stat-card"><div class="stat-label">참가자${ev.targetGrade?' (대상 학년)':''}</div><div class="stat-value">${filteredParticipants.length}</div><div class="stat-sub">${ev.targetGrade ? ev.targetGrade+'학년' : '전체'}</div></div>
+    <div class="stat-card"><div class="stat-label">기록 입력</div><div class="stat-value">${filteredScored}</div><div class="stat-sub">/${filteredParticipants.length}명</div></div>
+    <div class="stat-card"><div class="stat-label">순위 방식</div><div class="stat-value" style="font-size:16px;padding-top:6px;">${ev.rankType==='desc'?'높을수록↑':'낮을수록↓'}</div></div>
+    ${ev.unit ? `<div class="stat-card"><div class="stat-label">단위</div><div class="stat-value" style="font-size:18px;padding-top:4px;">${ev.unit}</div></div>` : ''}
+  </div>`;
+
+  // 금은동 기준란
+  const mc = ev.medalCriteria || {};
+  html += `<div class="card section-gap" id="medal-criteria-card-${eventId}">
+    <div class="card-header"><span class="card-title">🎖️ 금·은·동 기준 설정</span><span style="font-size:12px;color:var(--text3);">기록이 높을수록 좋은 경우: 금 ≥ 은 ≥ 동 순으로 입력</span></div>
+    <div class="card-body" style="padding:14px 20px;">
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">🥇</span>
+          <div>
+            <div style="font-size:11px;color:var(--text2);margin-bottom:4px;font-weight:500;">금상 기준</div>
+            <input type="number" class="score-input" style="width:80px;" id="mc-gold-${eventId}" value="${mc.gold??''}" placeholder="기준값"
+              onblur="saveMedalCriteria(${eventId})" onkeydown="if(event.key==='Enter')this.blur()">
+          </div>
+          <span style="font-size:12px;color:var(--text3);">${ev.rankType==='desc'?'이상':'이하'}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">🥈</span>
+          <div>
+            <div style="font-size:11px;color:var(--text2);margin-bottom:4px;font-weight:500;">은상 기준</div>
+            <input type="number" class="score-input" style="width:80px;" id="mc-silver-${eventId}" value="${mc.silver??''}" placeholder="기준값"
+              onblur="saveMedalCriteria(${eventId})" onkeydown="if(event.key==='Enter')this.blur()">
+          </div>
+          <span style="font-size:12px;color:var(--text3);">${ev.rankType==='desc'?'이상':'이하'}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">🥉</span>
+          <div>
+            <div style="font-size:11px;color:var(--text2);margin-bottom:4px;font-weight:500;">동상 기준</div>
+            <input type="number" class="score-input" style="width:80px;" id="mc-bronze-${eventId}" value="${mc.bronze??''}" placeholder="기준값"
+              onblur="saveMedalCriteria(${eventId})" onkeydown="if(event.key==='Enter')this.blur()">
+          </div>
+          <span style="font-size:12px;color:var(--text3);">${ev.rankType==='desc'?'이상':'이하'}</span>
+        </div>
+        <div style="font-size:12px;color:var(--text3);padding-bottom:4px;">미달 → 장려상</div>
+      </div>
+    </div>
+  </div>`;
+
+  // 순위 결과 (상위 3개 등수 + 체크박스)
+  const distinctRanks = [...new Set(rankings.map(e=>e.rank))].sort((a,b)=>a-b).slice(0,3);
+  const topEntries = rankings.filter(e => distinctRanks.includes(e.rank));
+  const picks = ev.overallPicks || {};
+  const anyChecked = Object.values(picks).some(v=>v);
+
+  if (topEntries.length) {
+    html += `<div class="card section-gap" id="ranking-card-${eventId}">
+      <div class="card-header">
+        <span class="card-title">🏅 순위 결과</span>
+        <span style="font-size:12px;color:var(--text3);">체크 후 완료 버튼으로 전체 순위에 반영</span>
+      </div>
+      <div class="card-body" style="padding:12px 20px;">
+        <div class="ranking-grid" id="ranking-grid-${eventId}">`;
+    topEntries.forEach(entry => {
+      const rc = entry.rank===1?'rank-1-item':entry.rank===2?'rank-2-item':'rank-3-item';
+      const chk = picks[entry.pid] ? 'checked' : '';
+      const chkCls = picks[entry.pid] ? 'checked' : '';
+      html += `<div class="ranking-item ${rc} ${chkCls}" id="rankitem-${eventId}-${entry.pid}">
+        <input type="checkbox" class="ranking-check" ${chk} onchange="togglePick(${eventId},${entry.pid},this.checked)">
+        ${getRankBadge(entry.rank)}
+        <div class="ranking-info">
+          <div class="ranking-name">${entry.participant.name}</div>
+          <div class="ranking-meta">
+            ${entry.participant.num ? `배번 ${entry.participant.num} ·` : ''}
+            ${entry.participant.team ? `<span class="team-tag" style="${getTeamColor(entry.participant.team)}">${entry.participant.team}</span>` : ''}
+            ${entry.participant.grade ? ` ${entry.participant.grade}학년` : ''}
+          </div>
+        </div>
+        <div class="ranking-score">${entry.score}${ev.unit?' '+ev.unit:''}</div>
+      </div>`;
+    });
+    html += `</div>
+        <div class="pick-action-bar ${anyChecked?'visible':''}" id="pick-bar-${eventId}">
+          <button class="btn btn-primary btn-sm" onclick="uploadToOverall(${eventId})">✅ 완료 — 전체 순위에 반영</button>
+          <button class="btn btn-danger btn-sm" onclick="resetPicks(${eventId})">↩ 반영 초기화</button>
+        </div>
+      </div></div>`;
+  }
+
+  // 기록 입력 테이블
+  html += `<div class="card">
+    <div class="card-header">
+      <span class="card-title">📝 기록 입력${ev.targetGrade ? ` <span style="font-size:12px;font-weight:400;color:var(--accent);margin-left:6px;">· ${ev.targetGrade}학년 대상</span>` : ''}</span>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <div class="num-search-wrap">
+          <span style="font-size:12px;color:var(--text3);">배번</span>
+          <input type="number" id="bib-search-${eventId}" placeholder="번호" min="1"
+            oninput="highlightBib(${eventId},this.value)"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();jumpToBib(${eventId},this.value)}">
+        </div>
+        <span style="font-size:12px;color:var(--text3);">|</span>
+        <span style="font-size:12px;color:var(--text3);">Enter로 이동</span>
+        <button class="btn btn-secondary btn-sm" onclick="clearEventScores(${eventId})">기록 초기화</button>
+      </div>
+    </div>
+    <div class="table-wrap"><table><thead><tr>
+      <th style="width:50px;">배번</th><th>이름</th><th>소속</th><th style="width:60px;">학년</th>
+      <th style="width:120px;">기록${ev.unit?' ('+ev.unit+')':''}</th><th style="width:60px;">순위</th><th style="width:80px;">상</th>
+    </tr></thead><tbody>`;
+
+  const sortedPs = [...filteredParticipants].sort((a,b) => {
+    const as = ev.scores[a.id], bs = ev.scores[b.id];
+    const aS = as !== undefined && as !== '' && !isNaN(parseFloat(as));
+    const bS = bs !== undefined && bs !== '' && !isNaN(parseFloat(bs));
+    if (aS !== bS) return aS ? 1 : -1;
+    return (parseInt(a.num)||9999) - (parseInt(b.num)||9999) || a.name.localeCompare(b.name);
+  });
+  const rankMap = {};
+  rankings.forEach(r => { rankMap[r.pid] = r.rank; });
+
+  if (!sortedPs.length) {
+    html += `<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:24px;">${ev.targetGrade?ev.targetGrade+'학년 참가자가 없습니다':'참가자가 없습니다'}</td></tr>`;
+  }
+  sortedPs.forEach(p => {
+    const score = ev.scores[p.id] !== undefined ? ev.scores[p.id] : '';
+    const isScored = score !== '' && !isNaN(parseFloat(score));
+    const rank = rankMap[p.id];
+    const rankHtml = rank ? getRankBadge(rank) : `<span style="color:var(--text3);font-size:12px;">-</span>`;
+    const awardHtml = isScored ? getAwardBadge(ev, parseFloat(score)) : `<span style="color:var(--text3);font-size:12px;">-</span>`;
+    html += `<tr id="row-${eventId}-${p.id}" data-bib="${p.num||''}" class="${isScored?'scored-row':''}">
+      <td style="font-family:'DM Mono',monospace;color:var(--text3);">${p.num||'-'}</td>
+      <td><strong>${p.name}</strong></td>
+      <td>${p.team?`<span class="team-tag" style="${getTeamColor(p.team)}">${p.team}</span>`:'-'}</td>
+      <td>${p.grade?p.grade+'학년':'-'}</td>
+      <td><input type="number" class="score-input" value="${score}"
+        data-event="${eventId}" data-pid="${p.id}"
+        onchange="updateScore(${eventId},${p.id},this.value)"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();focusNextScore(this)}"
+        placeholder="-"></td>
+      <td id="rank-cell-${eventId}-${p.id}">${rankHtml}</td>
+      <td id="award-cell-${eventId}-${p.id}">${awardHtml}</td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div></div>`;
+  document.getElementById('event-content').innerHTML = html;
+}
+
+function updateScore(eventId, pid, value) {
+  const ev = events.find(e => e.id === eventId);
+  if (!ev) return;
+  if (!ev.scores) ev.scores = {};
+  ev.scores[pid] = value === '' ? '' : parseFloat(value);
+  save(); fbSave();
+
+  const rankings = computeRankings(eventId);
+  const rankMap = {};
+  rankings.forEach(r => { rankMap[r.pid] = r.rank; });
+
+  // 순위 셀 업데이트
+  participants.forEach(p => {
+    const cell = document.getElementById(`rank-cell-${eventId}-${p.id}`);
+    if (cell) cell.innerHTML = rankMap[p.id] ? getRankBadge(rankMap[p.id]) : `<span style="color:var(--text3);font-size:12px;">-</span>`;
+    const aCell = document.getElementById(`award-cell-${eventId}-${p.id}`);
+    if (aCell) {
+      const s = ev.scores[p.id];
+      const isS = s !== undefined && s !== '' && !isNaN(parseFloat(s));
+      aCell.innerHTML = isS ? getAwardBadge(ev, parseFloat(s)) : `<span style="color:var(--text3);font-size:12px;">-</span>`;
+    }
+  });
+
+  // 행 재정렬 (미입력 상단)
+  const tbody = document.querySelector('#event-content tbody');
+  if (tbody) {
+    const rows = Array.from(tbody.querySelectorAll('tr[id^="row-"]'));
+    rows.sort((a,b) => {
+      const pA = parseInt(a.id.split('-')[2]), pB = parseInt(b.id.split('-')[2]);
+      const sA = ev.scores[pA], sB = ev.scores[pB];
+      const scA = sA !== undefined && sA !== '' && !isNaN(parseFloat(sA));
+      const scB = sB !== undefined && sB !== '' && !isNaN(parseFloat(sB));
+      if (scA !== scB) return scA ? 1 : -1;
+      const pObjA = participants.find(x=>x.id===pA), pObjB = participants.find(x=>x.id===pB);
+      return (parseInt(pObjA?.num)||9999) - (parseInt(pObjB?.num)||9999);
+    });
+    rows.forEach(r => tbody.appendChild(r));
+    rows.forEach(r => {
+      const p = parseInt(r.id.split('-')[2]);
+      const s = ev.scores[p];
+      r.classList.toggle('scored-row', s !== undefined && s !== '' && !isNaN(parseFloat(s)));
+    });
+  }
+
+  // 순위 결과 갱신
+  const rankGrid = document.getElementById(`ranking-grid-${eventId}`);
+  if (rankGrid) {
+    const distinctRanks = [...new Set(rankings.map(e=>e.rank))].sort((a,b)=>a-b).slice(0,3);
+    const topEntries = rankings.filter(e => distinctRanks.includes(e.rank));
+    const picks = ev.overallPicks || {};
+    rankGrid.innerHTML = topEntries.map(entry => {
+      const rc = entry.rank===1?'rank-1-item':entry.rank===2?'rank-2-item':'rank-3-item';
+      const chk = picks[entry.pid] ? 'checked' : '';
+      const chkCls = picks[entry.pid] ? 'checked' : '';
+      return `<div class="ranking-item ${rc} ${chkCls}" id="rankitem-${eventId}-${entry.pid}">
+        <input type="checkbox" class="ranking-check" ${chk} onchange="togglePick(${eventId},${entry.pid},this.checked)">
+        ${getRankBadge(entry.rank)}
+        <div class="ranking-info">
+          <div class="ranking-name">${entry.participant.name}</div>
+          <div class="ranking-meta">
+            ${entry.participant.num?`배번 ${entry.participant.num} ·`:''}
+            ${entry.participant.team?`<span class="team-tag" style="${getTeamColor(entry.participant.team)}">${entry.participant.team}</span>`:''}
+            ${entry.participant.grade?` ${entry.participant.grade}학년`:''}
+          </div>
+        </div>
+        <div class="ranking-score">${entry.score}${ev.unit?' '+ev.unit:''}</div>
+      </div>`;
+    }).join('');
+  }
+}
+
+// ══════════════════════════════════════════════
+// OVERALL PICKS
+// ══════════════════════════════════════════════
+function togglePick(eventId, pid, checked) {
+  const ev = events.find(e => e.id === eventId);
+  if (!ev) return;
+  if (!ev.overallPicks) ev.overallPicks = {};
+  ev.overallPicks[pid] = checked;
+  // 저장은 완료 버튼 눌렀을 때만 (체크 상태는 로컬 임시)
+  const item = document.getElementById(`rankitem-${eventId}-${pid}`);
+  if (item) item.classList.toggle('checked', checked);
+  const bar = document.getElementById(`pick-bar-${eventId}`);
+  if (bar) bar.classList.toggle('visible', Object.values(ev.overallPicks).some(v=>v));
+}
+
+function uploadToOverall(eventId) {
+  const ev = events.find(e => e.id === eventId);
+  if (!ev) return;
+  const count = Object.values(ev.overallPicks || {}).filter(v=>v).length;
+  if (!count) { showToast('선택된 참가자가 없습니다'); return; }
+  save(); fbSave();
+  showToast(`✅ ${count}명의 순위가 전체 순위에 반영됐습니다`);
+  showPage('overall');
+}
+
+function resetPicks(eventId) {
+  const ev = events.find(e => e.id === eventId);
+  if (!ev) return;
+  if (!confirm('이 종목의 순위 반영을 초기화할까요?')) return;
+  ev.overallPicks = {};
+  save(); fbSave();
+  renderEventPage(eventId);
+  showToast('순위 반영 초기화 완료');
+}
+
+function clearEventScores(eventId) {
+  if (!confirm('이 종목의 모든 기록을 초기화할까요?')) return;
+  const ev = events.find(e => e.id === eventId);
+  if (!ev) return;
+  ev.scores = {}; ev.overallPicks = {};
+  save(); fbSave(); renderEventPage(eventId); showToast('기록 초기화 완료');
+}
+
+// ══════════════════════════════════════════════
+// BIB SEARCH
+// ══════════════════════════════════════════════
+function highlightBib(eventId, val) {
+  document.querySelectorAll('#event-content tr[data-bib]').forEach(r => r.classList.remove('highlight-row'));
+  if (!val) return;
+  document.querySelectorAll(`#event-content tr[data-bib="${val}"]`).forEach(r => r.classList.add('highlight-row'));
+}
+function jumpToBib(eventId, val) {
+  if (!val) return;
+  const row = document.querySelector(`#event-content tr[data-bib="${val}"]`);
+  if (!row) { showToast(`배번 ${val} 참가자를 찾을 수 없습니다`); return; }
+  row.scrollIntoView({ behavior:'smooth', block:'center' });
+  row.classList.add('highlight-row');
+  const inp = row.querySelector('.score-input');
+  if (inp) { inp.focus(); inp.select(); }
+}
+function focusNextScore(input) {
+  const inputs = Array.from(document.querySelectorAll('.score-input'));
+  const idx = inputs.indexOf(input);
+  for (let i = idx+1; i < inputs.length; i++) {
+    if (!inputs[i].value) { inputs[i].focus(); return; }
+  }
+  if (idx < inputs.length-1) inputs[idx+1].focus();
+}
+
+// ══════════════════════════════════════════════
+// DASHBOARD
+// ══════════════════════════════════════════════
+function renderDashboard() {
+  const totalScored = events.reduce((s,ev) => s + Object.values(ev.scores||{}).filter(v => v!==''&&!isNaN(parseFloat(v))).length, 0);
+  document.getElementById('dashboard-stats').innerHTML = `
+    <div class="stat-card"><div class="stat-label">참가자</div><div class="stat-value">${participants.length}</div><div class="stat-sub">명</div></div>
+    <div class="stat-card"><div class="stat-label">종목 수</div><div class="stat-value">${events.length}</div><div class="stat-sub">개</div></div>
+    <div class="stat-card"><div class="stat-label">입력된 기록</div><div class="stat-value">${totalScored}</div><div class="stat-sub">건</div></div>`;
+
+  if (!events.length) {
+    document.getElementById('dashboard-events').innerHTML = `<div class="empty-state"><div class="empty-state-icon">🏁</div><p>왼쪽 하단의 <strong>"종목 추가"</strong> 버튼으로 종목을 추가해보세요</p></div>`;
+    return;
+  }
+  let html = '<div style="display:grid;gap:14px;">';
+  events.forEach(ev => {
+    const rankings = computeRankings(ev.id);
+    const scored = Object.values(ev.scores||{}).filter(v=>v!==''&&!isNaN(parseFloat(v))).length;
+    const distinctR = [...new Set(rankings.map(e=>e.rank))].sort((a,b)=>a-b).slice(0,3);
+    const top = rankings.filter(r => distinctR.includes(r.rank));
+    html += `<div class="card" style="cursor:pointer;" onclick="showPage('event',${ev.id})">
+      <div class="card-header">
+        <div><span class="card-title">🎯 ${ev.name}</span>${ev.group?`<span style="margin-left:6px;font-size:11px;color:var(--accent);">${ev.group}</span>`:''}${ev.targetGrade?`<span style="margin-left:8px;font-size:11px;color:var(--text3);">${ev.targetGrade}학년</span>`:''}</div>
+        <span style="font-size:12px;color:var(--text3);">${scored}명 입력 · ${ev.rankType==='desc'?'높을수록↑':'낮을수록↓'}</span>
+      </div>
+      <div class="card-body" style="padding:14px 20px;">
+        ${top.length ? top.map(r=>`<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">${getRankBadge(r.rank)}<strong>${r.participant.name}</strong>${r.participant.team?`<span class="team-tag" style="${getTeamColor(r.participant.team)}">${r.participant.team}</span>`:''}<span style="margin-left:auto;font-family:'DM Mono',monospace;font-weight:500;">${r.score}${ev.unit?' '+ev.unit:''}</span></div>`).join('') : `<span style="color:var(--text3);font-size:13px;">아직 기록이 없습니다</span>`}
+      </div>
+    </div>`;
+  });
+  html += '</div>';
+  document.getElementById('dashboard-events').innerHTML = html;
+}
+
+// ══════════════════════════════════════════════
+// OVERALL RANKING
+// ══════════════════════════════════════════════
+function renderOverall() {
+  const el = document.getElementById('overall-content');
+  if (!events.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🥇</div><p>종목을 추가하고 기록을 입력하면 전체 순위가 표시됩니다</p></div>`;
+    return;
+  }
+  const teamAwards = {};
+  events.forEach(ev => {
+    const picks = ev.overallPicks || {};
+    computeRankings(ev.id).forEach(r => {
+      if (!picks[r.pid]) return;
+      const team = r.participant.team;
+      if (!team) return;
+      if (!teamAwards[team]) teamAwards[team] = { gold:0, silver:0, bronze:0, total:0 };
+      if (r.rank===1) { teamAwards[team].gold++; teamAwards[team].total++; }
+      else if (r.rank===2) { teamAwards[team].silver++; teamAwards[team].total++; }
+      else if (r.rank===3) { teamAwards[team].bronze++; teamAwards[team].total++; }
+      else { teamAwards[team].total++; }
+    });
+  });
+  const teamList = Object.entries(teamAwards)
+    .map(([team,a]) => ({ team, ...a }))
+    .sort((a,b) => b.gold-a.gold || b.silver-a.silver || b.bronze-a.bronze || b.total-a.total);
+  let ovRank = 1;
+  for (let i=0; i<teamList.length; i++) {
+    if (i>0 && (teamList[i].gold!==teamList[i-1].gold || teamList[i].silver!==teamList[i-1].silver || teamList[i].bronze!==teamList[i-1].bronze)) ovRank = i+1;
+    teamList[i].rank = ovRank;
+  }
+  const maxTotal = Math.max(...teamList.map(t=>t.total), 1);
+
+  let html = `<div class="card section-gap">
+    <div class="card-header"><span class="card-title">🏆 소속별 종합 순위</span></div>
+    <div class="card-body">
+      <div class="alert alert-info" style="margin-bottom:16px;">순위 결과에서 체크·완료한 사람만 반영 · 순위당 1점</div>`;
+  if (!teamList.length) {
+    html += `<div style="color:var(--text3);text-align:center;padding:20px;">종목 페이지에서 순위를 체크하고 "완료" 버튼을 눌러주세요</div>`;
+  } else {
+    teamList.forEach(t => {
+      const pct = Math.round((t.total/maxTotal)*100);
+      html += `<div class="overall-team-item">${getRankBadge(t.rank)}
+        <div class="overall-bar-wrap">
+          <div class="overall-bar-label">
+            <span><span class="team-tag" style="${getTeamColor(t.team)}">${t.team}</span>
+              <span style="margin-left:8px;font-size:12px;color:var(--text3);">🥇${t.gold} &nbsp;🥈${t.silver} &nbsp;🥉${t.bronze}</span>
+            </span>
+            <span style="font-weight:600;">${t.total}점</span>
+          </div>
+          <div class="overall-bar-bg"><div class="overall-bar-fill" style="width:${pct}%"></div></div>
+        </div>
+      </div>`;
+    });
+  }
+  html += `</div></div><div style="display:grid;gap:12px;">`;
+  events.forEach(ev => {
+    const picks = ev.overallPicks || {};
+    const rankings = computeRankings(ev.id);
+    const uploaded = rankings.filter(r => picks[r.pid]);
+    if (!uploaded.length) return;
+    const dR = [...new Set(uploaded.map(e=>e.rank))].sort((a,b)=>a-b).slice(0,3);
+    const top = uploaded.filter(r => dR.includes(r.rank));
+    html += `<div class="card">
+      <div class="card-header">
+        <span class="card-title">🎯 ${ev.name}${ev.group?' · '+ev.group:''}</span>
+        <button class="btn btn-secondary btn-sm" onclick="showPage('event',${ev.id})">수정</button>
+      </div>
+      <div class="card-body" style="padding:12px 20px;">
+        ${top.map(r=>`<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+          ${getRankBadge(r.rank)}<strong>${r.participant.name}</strong>
+          ${r.participant.team?`<span class="team-tag" style="${getTeamColor(r.participant.team)}">${r.participant.team}</span>`:''}
+          <span style="margin-left:auto;font-family:'DM Mono',monospace;">${r.score}${ev.unit?' '+ev.unit:''}</span>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  });
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+// ══════════════════════════════════════════════
+// EXCEL EXPORT
+// ══════════════════════════════════════════════
+function xlsxDownload(wb, filename) { XLSX.writeFile(wb, filename); }
+
+function exportParticipantsExcel() {
+  if (!participants.length) { showToast('참가자가 없습니다'); return; }
+  const wb = XLSX.utils.book_new();
+
+  // 전체
+  const data = [['배번호','이름','소속','학년','추가정보']];
+  sortedList(participants).forEach(p => data.push([p.num||'', p.name, p.team||'', p.grade?p.grade+'학년':'', p.extra||'']));
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [{wch:8},{wch:14},{wch:14},{wch:8},{wch:20}];
+  XLSX.utils.book_append_sheet(wb, ws, '전체 목록');
+
+  // 학년별
+  const grades = [...new Set(participants.map(p=>p.grade).filter(Boolean))].sort((a,b)=>parseInt(a)-parseInt(b));
+  grades.forEach(g => {
+    const list = sortedList(participants.filter(p=>p.grade===g));
+    const d = [['배번호','이름','소속','추가정보']];
+    list.forEach(p => d.push([p.num||'', p.name, p.team||'', p.extra||'']));
+    const ws2 = XLSX.utils.aoa_to_sheet(d);
+    ws2['!cols'] = [{wch:8},{wch:14},{wch:14},{wch:20}];
+    XLSX.utils.book_append_sheet(wb, ws2, g+'학년');
+  });
+
+  // 소속별
+  const teams = [...new Set(participants.map(p=>p.team).filter(Boolean))].sort();
+  teams.forEach(t => {
+    const list = sortedList(participants.filter(p=>p.team===t));
+    const d = [['배번호','이름','학년','추가정보']];
+    list.forEach(p => d.push([p.num||'', p.name, p.grade?p.grade+'학년':'', p.extra||'']));
+    const ws3 = XLSX.utils.aoa_to_sheet(d);
+    ws3['!cols'] = [{wch:8},{wch:14},{wch:8},{wch:20}];
+    const sn = t.length > 28 ? t.slice(0,28)+'...' : t;
+    XLSX.utils.book_append_sheet(wb, ws3, sn);
+  });
+
+  const c = contests.find(x=>x.id===currentContestId);
+  xlsxDownload(wb, `${c?.name||'대회'}_참가자.xlsx`);
+  showToast('참가자 목록 엑셀 다운로드 완료');
+}
+
+function exportEventExcel(eventId) {
+  const ev = events.find(e=>e.id===eventId);
+  if (!ev) return;
+  const wb = XLSX.utils.book_new();
+  const rankings = computeRankings(eventId);
+  const rankMap = {};
+  rankings.forEach(r => { rankMap[r.pid] = r.rank; });
+  const fp = filterParticipantsByGrade(participants, ev.targetGrade);
+  const sorted = sortedList(fp);
+  const data = [['순위','배번호','이름','소속','학년',`기록${ev.unit?' ('+ev.unit+')':''}`]];
+  const scoredPids = new Set(rankings.map(r=>r.pid));
+  rankings.forEach(r => { const p=r.participant; data.push([r.rank, p.num||'', p.name, p.team||'', p.grade?p.grade+'학년':'', r.score]); });
+  sorted.filter(p=>!scoredPids.has(p.id)).forEach(p => data.push(['', p.num||'', p.name, p.team||'', p.grade?p.grade+'학년':'', '']));
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [{wch:6},{wch:8},{wch:14},{wch:14},{wch:8},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, ws, '전체 기록');
+  const dR = [...new Set(rankings.map(e=>e.rank))].sort((a,b)=>a-b).slice(0,3);
+  const top = rankings.filter(e=>dR.includes(e.rank));
+  if (top.length) {
+    const d2 = [['순위','배번호','이름','소속','학년',`기록${ev.unit?' ('+ev.unit+')':''}`]];
+    top.forEach(r => { const p=r.participant; d2.push([r.rank+'위', p.num||'', p.name, p.team||'', p.grade?p.grade+'학년':'', r.score]); });
+    const ws2 = XLSX.utils.aoa_to_sheet(d2);
+    ws2['!cols'] = [{wch:6},{wch:8},{wch:14},{wch:14},{wch:8},{wch:12}];
+    XLSX.utils.book_append_sheet(wb, ws2, '순위 결과');
+  }
+  const c = contests.find(x=>x.id===currentContestId);
+  xlsxDownload(wb, `${c?.name||'대회'}_${ev.name}.xlsx`);
+  showToast(`"${ev.name}" 엑셀 다운로드 완료`);
+}
+
+function exportOverallExcel() {
+  const wb = XLSX.utils.book_new();
+  const teamAwards = {};
+  events.forEach(ev => {
+    const picks = ev.overallPicks||{};
+    computeRankings(ev.id).forEach(r => {
+      if (!picks[r.pid]) return;
+      const team = r.participant.team; if (!team) return;
+      if (!teamAwards[team]) teamAwards[team] = {gold:0,silver:0,bronze:0,total:0};
+      if (r.rank===1) { teamAwards[team].gold++; teamAwards[team].total++; }
+      else if (r.rank===2) { teamAwards[team].silver++; teamAwards[team].total++; }
+      else if (r.rank===3) { teamAwards[team].bronze++; teamAwards[team].total++; }
+      else teamAwards[team].total++;
+    });
+  });
+  const teamList = Object.entries(teamAwards).map(([team,a])=>({team,...a}))
+    .sort((a,b)=>b.gold-a.gold||b.silver-a.silver||b.bronze-a.bronze||b.total-a.total);
+  let ovRank=1;
+  for (let i=0;i<teamList.length;i++) {
+    if (i>0&&(teamList[i].gold!==teamList[i-1].gold||teamList[i].silver!==teamList[i-1].silver||teamList[i].bronze!==teamList[i-1].bronze)) ovRank=i+1;
+    teamList[i].rank=ovRank;
+  }
+  const td=[['순위','소속','🥇 금','🥈 은','🥉 동','합계(점)']];
+  teamList.forEach(t=>td.push([t.rank+'위',t.team,t.gold,t.silver,t.bronze,t.total]));
+  const wsT=XLSX.utils.aoa_to_sheet(td);
+  wsT['!cols']=[{wch:6},{wch:16},{wch:8},{wch:8},{wch:8},{wch:10}];
+  XLSX.utils.book_append_sheet(wb,wsT,'소속별 종합 순위');
+  events.forEach(ev => {
+    const picks=ev.overallPicks||{};
+    const uploaded=computeRankings(ev.id).filter(r=>picks[r.pid]);
+    if (!uploaded.length) return;
+    const ed=[['순위','배번호','이름','소속','학년',`기록${ev.unit?' ('+ev.unit+')':''}`]];
+    uploaded.forEach(r=>{const p=r.participant;ed.push([r.rank+'위',p.num||'',p.name,p.team||'',p.grade?p.grade+'학년':'',r.score]);});
+    const wsE=XLSX.utils.aoa_to_sheet(ed);
+    wsE['!cols']=[{wch:6},{wch:8},{wch:14},{wch:14},{wch:8},{wch:12}];
+    const sn=(ev.group?ev.group+'-':'')+ev.name; XLSX.utils.book_append_sheet(wb,wsE,sn.slice(0,31));
+  });
+  if (!wb.SheetNames.length){showToast('반영된 순위가 없습니다');return;}
+  const c=contests.find(x=>x.id===currentContestId);
+  xlsxDownload(wb,`${c?.name||'대회'}_전체순위.xlsx`);
+  showToast('전체 순위 엑셀 다운로드 완료');
+}
+
+// ══════════════════════════════════════════════
+// CERTIFICATE (상장) — Word .docx 방식
+// ══════════════════════════════════════════════
+let certDocxArrayBuffer = null;
+let certDocxFileName = '';
+let certSelectedPids = new Set(); // { evId_pid }
+
+function switchCertTab(tabId, btn) {
+  document.querySelectorAll('#cert-main-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  ['cert-tab-settings','cert-tab-print'].forEach(id => {
+    document.getElementById(id).style.display = id === tabId ? 'block' : 'none';
+  });
+  if (tabId === 'cert-tab-print') renderCertPrint();
+}
+
+function renderCertPrint() {
+  const container = document.getElementById('cert-print-content');
+  if (!container) return;
+
+  // 기록 입력된 참가자가 있는 종목만 추출
+  const eventsWithScores = events.filter(ev => {
+    const fp = filterParticipantsByGrade(participants, ev.targetGrade);
+    return fp.some(p => {
+      const s = ev.scores?.[p.id];
+      return s !== undefined && s !== '' && !isNaN(parseFloat(s));
+    });
+  });
+
+  if (!eventsWithScores.length) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📝</div><p>기록이 입력된 참가자가 없습니다<br><span style="font-size:12px;">종목 페이지에서 기록을 먼저 입력하세요</span></p></div>`;
+    return;
+  }
+
+  const selectedCount = certSelectedPids.size;
+  let html = `
+    <div class="card section-gap" style="position:sticky;top:56px;z-index:40;border-color:var(--accent);">
+      <div class="card-body" style="padding:12px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+        <div style="font-size:13px;color:var(--text2);">
+          <span id="cert-sel-count" style="font-weight:700;color:var(--accent);font-size:16px;">${selectedCount}</span>명 선택됨
+          <button class="btn btn-secondary btn-xs" style="margin-left:10px;" onclick="certSelectAll()">전체 선택</button>
+          <button class="btn btn-secondary btn-xs" style="margin-left:4px;" onclick="certDeselectAll()">선택 해제</button>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="downloadBatchCertificates()" ${selectedCount===0?'disabled':''} id="cert-dl-btn">
+          📥 선택 상장 다운로드 (${selectedCount}건)
+        </button>
+      </div>
+    </div>`;
+
+  eventsWithScores.forEach(ev => {
+    const fp = filterParticipantsByGrade(participants, ev.targetGrade);
+    const scoredPs = fp.filter(p => {
+      const s = ev.scores?.[p.id];
+      return s !== undefined && s !== '' && !isNaN(parseFloat(s));
+    });
+    const rankings = computeRankings(ev.id);
+    const rankMap = {};
+    rankings.forEach(r => { rankMap[r.pid] = r.rank; });
+
+    html += `<div class="card section-gap">
+      <div class="card-header">
+        <span class="card-title">🎯 ${ev.name}${ev.targetGrade ? ` <span style="font-size:12px;font-weight:400;color:var(--text3);">(${ev.targetGrade}학년 대상)</span>` : ''}</span>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-secondary btn-xs" onclick="certSelectEvent(${ev.id})">종목 전체 선택</button>
+          <button class="btn btn-secondary btn-xs" onclick="certDeselectEvent(${ev.id})">종목 해제</button>
+        </div>
+      </div>
+      <div class="table-wrap"><table><thead><tr>
+        <th style="width:36px;"><input type="checkbox" id="chk-ev-${ev.id}" onchange="certToggleEvent(${ev.id},this.checked)" title="종목 전체"></th>
+        <th style="width:50px;">배번</th><th>이름</th><th>소속</th><th style="width:70px;">학년</th>
+        <th style="width:90px;">기록${ev.unit?' ('+ev.unit+')':''}</th><th style="width:70px;">순위</th><th style="width:80px;">상</th>
+      </tr></thead><tbody>`;
+
+    sortedList(scoredPs).forEach(p => {
+      const score = ev.scores[p.id];
+      const rank = rankMap[p.id];
+      const key = `${ev.id}_${p.id}`;
+      const checked = certSelectedPids.has(key) ? 'checked' : '';
+      const award = getAwardText(ev, parseFloat(score));
+      html += `<tr class="${checked ? 'highlight-row' : ''}" id="cert-row-${ev.id}-${p.id}" onclick="certTogglePid('${key}',${ev.id})" style="cursor:pointer;">
+        <td onclick="event.stopPropagation()"><input type="checkbox" class="cert-chk" data-key="${key}" data-evid="${ev.id}" ${checked} onchange="certTogglePidChk('${key}',${ev.id},this.checked)"></td>
+        <td style="font-family:'DM Mono',monospace;color:var(--text3);">${p.num||'-'}</td>
+        <td><strong>${p.name}</strong></td>
+        <td>${p.team?`<span class="team-tag" style="${getTeamColor(p.team)}">${p.team}</span>`:'-'}</td>
+        <td>${p.grade ? gradeToLabel(p.grade) : '-'}</td>
+        <td style="font-family:'DM Mono',monospace;">${score}${ev.unit?' '+ev.unit:''}</td>
+        <td>${rank ? getRankBadge(rank) : '-'}</td>
+        <td>${getAwardBadge(ev, parseFloat(score))}</td>
+      </tr>`;
+    });
+
+    html += `</tbody></table></div></div>`;
+  });
+
+  container.innerHTML = html;
+  updateCertUI();
+}
+
+function certTogglePid(key, evId) {
+  if (certSelectedPids.has(key)) certSelectedPids.delete(key);
+  else certSelectedPids.add(key);
+  // 행 스타일 + 체크박스 동기화
+  const [eid, pid] = key.split('_');
+  const row = document.getElementById(`cert-row-${eid}-${pid}`);
+  const chk = document.querySelector(`.cert-chk[data-key="${key}"]`);
+  if (row) row.classList.toggle('highlight-row', certSelectedPids.has(key));
+  if (chk) chk.checked = certSelectedPids.has(key);
+  updateCertUI();
+}
+
+function certTogglePidChk(key, evId, checked) {
+  if (checked) certSelectedPids.add(key);
+  else certSelectedPids.delete(key);
+  const [eid, pid] = key.split('_');
+  const row = document.getElementById(`cert-row-${eid}-${pid}`);
+  if (row) row.classList.toggle('highlight-row', checked);
+  updateCertUI();
+}
+
+function certToggleEvent(evId, checked) {
+  const ev = events.find(e => e.id === evId);
+  if (!ev) return;
+  const fp = filterParticipantsByGrade(participants, ev.targetGrade);
+  fp.forEach(p => {
+    const s = ev.scores?.[p.id];
+    if (s === undefined || s === '' || isNaN(parseFloat(s))) return;
+    const key = `${evId}_${p.id}`;
+    if (checked) certSelectedPids.add(key);
+    else certSelectedPids.delete(key);
+    const row = document.getElementById(`cert-row-${evId}-${p.id}`);
+    const chk = document.querySelector(`.cert-chk[data-key="${key}"]`);
+    if (row) row.classList.toggle('highlight-row', checked);
+    if (chk) chk.checked = checked;
+  });
+  updateCertUI();
+}
+
+function certSelectEvent(evId) {
+  const chk = document.getElementById(`chk-ev-${evId}`);
+  if (chk) chk.checked = true;
+  certToggleEvent(evId, true);
+}
+function certDeselectEvent(evId) {
+  const chk = document.getElementById(`chk-ev-${evId}`);
+  if (chk) chk.checked = false;
+  certToggleEvent(evId, false);
+}
+
+function certSelectAll() {
+  events.forEach(ev => {
+    const fp = filterParticipantsByGrade(participants, ev.targetGrade);
+    fp.forEach(p => {
+      const s = ev.scores?.[p.id];
+      if (s === undefined || s === '' || isNaN(parseFloat(s))) return;
+      certSelectedPids.add(`${ev.id}_${p.id}`);
+    });
+  });
+  renderCertPrint();
+}
+function certDeselectAll() {
+  certSelectedPids.clear();
+  renderCertPrint();
+}
+
+function updateCertUI() {
+  const cnt = certSelectedPids.size;
+  const el = document.getElementById('cert-sel-count');
+  const btn = document.getElementById('cert-dl-btn');
+  if (el) el.textContent = cnt;
+  if (btn) {
+    btn.textContent = `📥 선택 상장 다운로드 (${cnt}건)`;
+    btn.disabled = cnt === 0;
+  }
+}
+
+// ── 설정 저장/로드 ──
+function saveCertSettings() {
+  const settings = {
+    number: document.getElementById('cert-number')?.value || '',
+    date: document.getElementById('cert-date')?.value || ''
+  };
+  try { localStorage.setItem('cert_settings', JSON.stringify(settings)); } catch(e){}
+}
+
+function loadCertSettings() {
+  try {
+    const s = localStorage.getItem('cert_settings');
+    if (s) {
+      const settings = JSON.parse(s);
+      const numEl = document.getElementById('cert-number');
+      const dateEl = document.getElementById('cert-date');
+      if (numEl) numEl.value = settings.number || '';
+      if (dateEl) dateEl.value = settings.date || '';
+    }
+  } catch(e){}
+  try {
+    const saved = localStorage.getItem('cert_docx_b64');
+    const savedName = localStorage.getItem('cert_docx_name');
+    if (saved && savedName) {
+      certDocxArrayBuffer = base64ToArrayBuffer(saved);
+      certDocxFileName = savedName;
+      showCertDocxInfo(savedName);
+    }
+  } catch(e){}
+}
+
+function getCertSettings() {
+  try {
+    const s = localStorage.getItem('cert_settings');
+    return s ? JSON.parse(s) : {};
+  } catch(e) { return {}; }
+}
+
+// ── 파일 업로드 ──
+function handleCertDocxDrop(e) {
+  e.preventDefault();
+  document.getElementById('cert-upload-zone').classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file && file.name.endsWith('.docx')) loadCertDocx(file);
+  else showToast('.docx 파일만 업로드 가능합니다');
+}
+function handleCertDocxUpload(e) {
+  const file = e.target.files[0];
+  if (file) loadCertDocx(file);
+  e.target.value = '';
+}
+function loadCertDocx(file) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    certDocxArrayBuffer = e.target.result;
+    certDocxFileName = file.name;
+    try {
+      const b64 = arrayBufferToBase64(certDocxArrayBuffer);
+      localStorage.setItem('cert_docx_b64', b64);
+      localStorage.setItem('cert_docx_name', file.name);
+    } catch(err) { showToast('파일이 너무 큽니다. 로컬 저장 생략'); }
+    showCertDocxInfo(file.name);
+    showToast('Word 상장 파일 업로드 완료 ✅');
+  };
+  reader.readAsArrayBuffer(file);
+}
+function showCertDocxInfo(name) {
+  const info = document.getElementById('cert-file-info');
+  const nameEl = document.getElementById('cert-file-name');
+  const iconEl = document.getElementById('cert-upload-icon');
+  const textEl = document.getElementById('cert-upload-text');
+  if (info) info.style.display = 'block';
+  if (nameEl) nameEl.textContent = name;
+  if (iconEl) iconEl.textContent = '✅';
+  if (textEl) textEl.innerHTML = '<strong>파일 업로드됨 — 다시 클릭하면 교체</strong>';
+}
+function removeCertDocx() {
+  certDocxArrayBuffer = null; certDocxFileName = '';
+  try { localStorage.removeItem('cert_docx_b64'); localStorage.removeItem('cert_docx_name'); } catch(e){}
+  const info = document.getElementById('cert-file-info');
+  if (info) info.style.display = 'none';
+  const iconEl = document.getElementById('cert-upload-icon');
+  const textEl = document.getElementById('cert-upload-text');
+  if (iconEl) iconEl.textContent = '📄';
+  if (textEl) textEl.innerHTML = '<strong>클릭하거나 .docx 파일을 드래그</strong>';
+  showToast('파일 삭제됨');
+}
+
+// ── 유틸 ──
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+function base64ToArrayBuffer(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+function formatCertDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d)) return dateStr;
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}년 ${m}월 ${day}일`;
+}
+function gradeToLabel(grade) {
+  if (!grade) return '';
+  const g = parseInt(grade);
+  if (isNaN(g)) return grade;
+  if (g >= 1 && g <= 6) return `초등${g}부`;
+  if (g >= 7 && g <= 9) return `중등${g-6}부`;
+  if (g >= 10 && g <= 12) return `고등${g-9}부`;
+  return grade + '학년';
+}
+
+// ── XML 치환 ──
+function replacePlaceholdersInXml(xml, replacements) {
+  let result = xml;
+  const patterns = [
+    { re: /\(제\s*\*+\s*호\)/g,              val: replacements['호수'] },
+    { re: /\(\*{2,}년\s*\*+월\s*\*+일\)/g,  val: replacements['날짜'] },
+    { re: /\(종목\)/g,                        val: replacements['종목'] },
+    { re: /\(학년\)/g,                        val: replacements['학년'] },
+    { re: /\(\*{1,}회\)/g,                   val: replacements['회'] || '' },
+    { re: /\(상\)/g,                          val: replacements['상'] },
+    { re: /\(학교\)/g,                        val: replacements['학교'] },
+    { re: /\(이름\)/g,                        val: replacements['이름'] },
+    { re: /\(기록\)/g,                        val: replacements['기록'] },
+  ];
+  result = result.replace(/(<w:t[^>]*>)([\s\S]*?)(<\/w:t>)/g, (match, open, content, close) => {
+    let replaced = content;
+    patterns.forEach(p => {
+      if (p.val !== undefined && p.val !== null && p.val !== '') replaced = replaced.replace(p.re, p.val);
+    });
+    if (replaced === content) return match;
+    const newOpen = open.includes('xml:space') ? open : open.replace('<w:t', '<w:t xml:space="preserve"');
+    return newOpen + replaced + close;
+  });
+  return result;
+}
+
+function fixSplitRunsAndReplace(xml, replacements) {
+  return xml.replace(/(<w:p[ >][\s\S]*?<\/w:p>)/g, (para) => {
+    // 단락 내 모든 run의 텍스트를 수집
+    const tPattern = /(<w:t[^>]*>)([\s\S]*?)(<\/w:t>)/g;
+    const texts = [];
+    let m;
+    while ((m = tPattern.exec(para)) !== null) texts.push(m[2]);
+    const combined = texts.join('');
+
+    const patterns = [
+      { re: /\(제\s*\*+\s*호\)/g,              val: replacements['호수'] },
+      { re: /\(\*{2,}년\s*\*+월\s*\*+일\)/g,  val: replacements['날짜'] },
+      { re: /\(종목\)/g,                        val: replacements['종목'] },
+      { re: /\(학년\)/g,                        val: replacements['학년'] },
+      { re: /\(\*{1,}회\)/g,                   val: replacements['회'] || '' },
+      { re: /\(상\)/g,                          val: replacements['상'] },
+      { re: /\(학교\)/g,                        val: replacements['학교'] },
+      { re: /\(이름\)/g,                        val: replacements['이름'] },
+      { re: /\(기록\)/g,                        val: replacements['기록'] },
+    ];
+
+    let newCombined = combined;
+    let changed = false;
+    patterns.forEach(p => {
+      if (p.val !== undefined && p.val !== null) {
+        const replaced = newCombined.replace(p.re, p.val);
+        if (replaced !== newCombined) { newCombined = replaced; changed = true; }
+      }
+    });
+    if (!changed) return para;
+
+    // 치환이 일어난 경우: 각 run을 원래 텍스트 기준으로 재분배
+    // 오른쪽 정렬 탭이 깨지지 않도록 run별 텍스트 길이 비율로 분배
+    const runMatches = [];
+    const tPat2 = /(<w:t[^>]*>)([\s\S]*?)(<\/w:t>)/g;
+    let m2;
+    while ((m2 = tPat2.exec(para)) !== null) {
+      runMatches.push({ open: m2[1], content: m2[2], close: m2[3], idx: m2.index, fullLen: m2[0].length });
+    }
+
+    // 치환된 전체 문자열을 원본 run 분포에 맞게 재분배
+    let remaining = newCombined;
+    const newContents = [];
+    for (let i = 0; i < runMatches.length; i++) {
+      if (i === runMatches.length - 1) {
+        newContents.push(remaining);
+      } else {
+        const origLen = runMatches[i].content.length;
+        // 원본 run이 비어있으면 빈 문자열 유지
+        if (origLen === 0) {
+          newContents.push('');
+        } else {
+          // 원본 비율만큼 새 문자열에서 가져가기
+          const take = Math.min(origLen, remaining.length);
+          newContents.push(remaining.slice(0, take));
+          remaining = remaining.slice(take);
+        }
+      }
+    }
+
+    // para 내 <w:t> 태그들을 새 내용으로 교체
+    let ri = 0;
+    return para.replace(/(<w:t[^>]*>)([\s\S]*?)(<\/w:t>)/g, (match, open, content, close) => {
+      const newContent = newContents[ri] !== undefined ? newContents[ri] : content;
+      ri++;
+      // xml:space="preserve" 보장 (공백/탭 보존용)
+      const newOpen = open.includes('xml:space') ? open : open.replace('<w:t', '<w:t xml:space="preserve"');
+      return newOpen + newContent + close;
+    });
+  });
+}
+
+// docx 1부 생성 (ArrayBuffer 반환)
+async function buildOneCertificate(docxBuf, replacements) {
+  const zip = await JSZip.loadAsync(docxBuf);
+  const docXmlFile = zip.file('word/document.xml');
+  if (!docXmlFile) throw new Error('유효하지 않은 Word 파일');
+  let docXml = await docXmlFile.async('string');
+  docXml = replacePlaceholdersInXml(docXml, replacements);
+  docXml = fixSplitRunsAndReplace(docXml, replacements);
+  zip.file('word/document.xml', docXml);
+
+  const hfFiles = Object.keys(zip.files).filter(f => f.match(/^word\/(header|footer)\d*\.xml$/));
+  for (const fname of hfFiles) {
+    let xml = await zip.file(fname).async('string');
+    xml = replacePlaceholdersInXml(xml, replacements);
+    xml = fixSplitRunsAndReplace(xml, replacements);
+    zip.file(fname, xml);
+  }
+  return zip.generateAsync({ type: 'arraybuffer', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+}
+
+// 여러 상장을 한 docx에 페이지 구분으로 합치기
+// 각 상장의 body 단락들을 추출해서 pageBreak로 이어 붙임
+async function mergeCertificates(docxBufs) {
+  if (docxBufs.length === 0) throw new Error('선택된 항목 없음');
+  if (docxBufs.length === 1) return new Uint8Array(docxBufs[0]);
+
+  // 첫 번째를 기준 zip으로 사용
+  const baseZip = await JSZip.loadAsync(docxBufs[0]);
+  let baseXml = await baseZip.file('word/document.xml').async('string');
+
+  // 나머지 파일의 body 단락 추출
+  for (let i = 1; i < docxBufs.length; i++) {
+    const zip = await JSZip.loadAsync(docxBufs[i]);
+    let xml = await zip.file('word/document.xml').async('string');
+
+    // <w:body> 안의 단락들 추출 (마지막 <w:sectPr> 제외)
+    const bodyMatch = xml.match(/<w:body>([\s\S]*?)<\/w:body>/);
+    if (!bodyMatch) continue;
+    let bodyContent = bodyMatch[1];
+    // sectPr 제거
+    bodyContent = bodyContent.replace(/<w:sectPr[\s\S]*?<\/w:sectPr>/g, '');
+    bodyContent = bodyContent.trim();
+
+    // 기준 xml의 </w:body> 직전에 pageBreak + 단락들 삽입
+    const pageBreakPara = `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
+    baseXml = baseXml.replace(/<\/w:body>/, pageBreakPara + bodyContent + '</w:body>');
+  }
+
+  baseZip.file('word/document.xml', baseXml);
+  const blob = await baseZip.generateAsync({ type: 'uint8array', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+  return blob;
+}
+
+// ── 일괄 다운로드 ──
+async function downloadBatchCertificates() {
+  if (certSelectedPids.size === 0) { showToast('참가자를 선택해주세요'); return; }
+
+  let docxBuf = certDocxArrayBuffer;
+  if (!docxBuf) {
+    try { const b64 = localStorage.getItem('cert_docx_b64'); if (b64) docxBuf = base64ToArrayBuffer(b64); } catch(e){}
+  }
+  if (!docxBuf) { showToast('❌ 상장 설정 탭에서 Word 파일을 먼저 업로드해주세요'); return; }
+
+  const settings = getCertSettings();
+  const certNum = settings.number ? `제   ${settings.number}   호` : '';
+  const certDate = formatCertDate(settings.date || '');
+
+  showToast(`⏳ ${certSelectedPids.size}건 상장 생성 중...`);
+
+  try {
+    const bufs = [];
+    for (const key of certSelectedPids) {
+      const [evIdStr, pidStr] = key.split('_');
+      const evId = parseInt(evIdStr), pid = parseInt(pidStr);
+      const ev = events.find(e => e.id === evId);
+      const p = participants.find(x => x.id === pid);
+      if (!ev || !p) continue;
+
+      const score = ev.scores?.[pid];
+      const hasScore = score !== undefined && score !== '' && !isNaN(parseFloat(score));
+      const awardText = hasScore ? getAwardText(ev, parseFloat(score)) : '장려상';
+      const scoreLabel = hasScore ? `${score}${ev.unit ? ev.unit : '회'}` : '';
+
+      const replacements = {
+        '호수': certNum,
+        '날짜': certDate,
+        '종목': ev.name || '',
+        '학년': gradeToLabel(p.grade),
+        '상': awardText,
+        '학교': p.extra || '',
+        '이름': p.name || '',
+        '기록': scoreLabel,
+        '회': ''
+      };
+
+      const buf = await buildOneCertificate(docxBuf, replacements);
+      bufs.push(buf);
+    }
+
+    const merged = await mergeCertificates(bufs);
+    const blob = new Blob([merged], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `상장_${certSelectedPids.size}건.docx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    showToast(`✅ 상장 ${certSelectedPids.size}건 다운로드 완료`);
+  } catch(err) {
+    console.error(err);
+    showToast('❌ 상장 생성 실패: ' + (err.message || err));
+  }
+}
+
+// ══════════════════════════════════════════════
+// FIREBASE
+// ══════════════════════════════════════════════
+let db = null, fbConnected = false, fbConfig = null;
+
+function setSyncStatus(state, text) {
+  const dot = document.getElementById('sync-dot');
+  const txt = document.getElementById('sync-text');
+  if (!dot||!txt) return;
+  dot.className = 'sync-dot ' + state;
+  txt.textContent = text;
+}
+function loadFbConfig() {
+  try { const c=localStorage.getItem('fb_config'); return c?JSON.parse(c):null; } catch(e){return null;}
+}
+function saveFbConfig(cfg) { localStorage.setItem('fb_config', JSON.stringify(cfg)); }
+
+async function initFirebase(cfg) {
+  try { if (firebase.apps.length) await firebase.app().delete(); } catch(e){}
+  try {
+    firebase.initializeApp(cfg);
+    db = firebase.database(); fbConnected = true; fbConfig = cfg;
+    setSyncStatus('syncing','연결 중...');
+    await db.ref('.info/serverTimeOffset').once('value');
+    setSyncStatus('ok','실시간 동기화');
+    db.ref('.info/connected').on('value', snap => setSyncStatus(snap.val()?'ok':'error', snap.val()?'실시간 동기화':'연결 끊김'));
+    if (currentContestId) fbListenContest(currentContestId);
+    showToast('Firebase 연결 완료 ✅');
+  } catch(e) {
+    db=null; fbConnected=false;
+    const msg=e.message||'';
+    let hint = msg.includes('permission')||msg.includes('PERMISSION') ? '규칙 오류 — Realtime Database → 규칙 → 테스트 모드로 변경' :
+      msg.includes('API key') ? 'API Key가 잘못되었습니다' :
+      msg.includes('database') ? 'Database URL을 확인해주세요' : msg;
+    setSyncStatus('error','연결 실패');
+    showToast('❌ '+hint);
+    console.error(e);
+  }
+}
+
+function fbListenContest(id) {
+  if (!db) return;
+  db.ref('contests/'+id).on('value', snap => {
+    const data = snap.val();
+    if (!data) { fbSave(); return; }
+    applyContestData(data);
+    saveContestData(id);
+    renderEventNav(); renderParticipants(); renderDashboard();
+    if (currentPage==='event'&&currentEventId) renderEventPage(currentEventId);
+    if (currentPage==='overall') renderOverall();
+  }, () => { setSyncStatus('error','권한 오류'); });
+}
+
+function fbSave() {
+  if (!db || !currentContestId) return;
+  setSyncStatus('syncing','저장 중...');
+  db.ref('contests/'+currentContestId).set(getContestData())
+    .then(()=>setSyncStatus('ok','실시간 동기화'))
+    .catch(()=>setSyncStatus('error','저장 실패'));
+}
+function fbPull() {
+  if (!db || !currentContestId) return;
+  db.ref('contests/'+currentContestId).once('value').then(snap => {
+    const data=snap.val(); if (!data){fbSave();return;}
+    applyContestData(data); saveContestData(currentContestId);
+    renderEventNav(); renderParticipants(); renderDashboard();
+  });
+}
+
+function connectFirebase() {
+  const required=['apiKey','authDomain','databaseURL','projectId'];
+  const optional=['storageBucket','messagingSenderId','appId','measurementId'];
+  const cfg={}; const missing=[];
+  required.forEach(f=>{const v=document.getElementById('fb-'+f)?.value.trim();if(!v)missing.push(f);else cfg[f]=v;});
+  optional.forEach(f=>{const v=document.getElementById('fb-'+f)?.value.trim();if(v)cfg[f]=v;});
+  if (missing.length){showToast('필수 항목 입력해주세요: '+missing.join(', '));return;}
+  saveFbConfig(cfg); closeModal('modal-firebase'); initFirebase(cfg);
+}
+function disconnectFirebase() {
+  try{if(firebase.apps.length)firebase.app().delete();}catch(e){}
+  db=null;fbConnected=false;localStorage.removeItem('fb_config');
+  setSyncStatus('','로컬 모드');showToast('Firebase 연결 해제');closeModal('modal-firebase');
+}
+function openFirebaseModal() {
+  const cfg=loadFbConfig()||{};
+  ['apiKey','authDomain','databaseURL','projectId','storageBucket','messagingSenderId','appId','measurementId']
+    .forEach(f=>{const el=document.getElementById('fb-'+f);if(el)el.value=cfg[f]||'';});
+  openModal('modal-firebase');
+}
+
+// ══════════════════════════════════════════════
+// MODAL OVERLAY CLOSE
+// ══════════════════════════════════════════════
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', function(e){ if(e.target===this) closeModal(this.id); });
+});
+
+// ══════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════
+loadContestList();
+renderContestScreen();
+const _fbCfg = loadFbConfig();
+if (_fbCfg) initFirebase(_fbCfg);
+</script>
+</body>
+</html>
